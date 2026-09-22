@@ -224,15 +224,12 @@ refresh lists / subscriptions
 
 ---
 
-# 🚀 Быстрый старт
+## 🚀 Установка и обновление скрипта
 
-## Установка на чистый роутер
-
-Подключитесь к роутеру по SSH и выполните:
+Для чистой установки на новый роутер или обновления уже установленного скрипта выполните в SSH:
 
 ```sh
-wget -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr \
-  && chmod +x /usr/bin/forkop-mgr
+u="https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr"; (curl -sL -x http://127.0.0.1:4534 "$u" -o /usr/bin/forkop-mgr 2>/dev/null || curl -sL "$u" -o /usr/bin/forkop-mgr 2>/dev/null || wget -qO /usr/bin/forkop-mgr "$u") && chmod +x /usr/bin/forkop-mgr
 ```
 
 Запуск:
@@ -676,13 +673,12 @@ The manager controls the service order to avoid DNS/NetBird startup loops.
 
 # 🚀 Quick Start
 
-## Install
+## Install and update script
 
 Connect to the router over SSH and run:
 
 ```sh
-wget -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr \
-  && chmod +x /usr/bin/forkop-mgr
+u="https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr"; (curl -sL -x http://127.0.0.1:4534 "$u" -o /usr/bin/forkop-mgr 2>/dev/null || curl -sL "$u" -o /usr/bin/forkop-mgr 2>/dev/null || wget -qO /usr/bin/forkop-mgr "$u") && chmod +x /usr/bin/forkop-mgr
 ```
 
 Run:
