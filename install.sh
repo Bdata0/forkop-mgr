@@ -4,7 +4,6 @@ set -e
 REPO="Bdata0/forkop-mgr"
 DEST="/usr/bin/forkop-mgr"
 RAW_URL="https://raw.githubusercontent.com/${REPO}/main/forkop-mgr"
-CDN_URL="https://cdn.jsdelivr.net/gh/${REPO}@main/forkop-mgr"
 
 echo "=== Установка / Обновление Forkop Control Center ==="
 
@@ -33,12 +32,9 @@ download() {
 }
 
 echo "Загрузка forkop-mgr..."
-if ! download "$CDN_URL" "$DEST"; then
-    echo "Попытка прямого скачивания с GitHub..."
-    if ! download "$RAW_URL" "$DEST"; then
-        echo "Критическая ошибка: не удалось загрузить файл!"
-        exit 1
-    fi
+if ! download "$RAW_URL" "$DEST"; then
+    echo "Критическая ошибка: не удалось загрузить файл с GitHub!"
+    exit 1
 fi
 
 if [ ! -s "$DEST" ]; then
@@ -50,12 +46,12 @@ fi
 sed -i 's/\r$//' "$DEST"
 chmod +x "$DEST"
 
-echo "Установка успешно завершена!"
-echo "Запуск менеджера..."
+# Гарантируем запуск службы Forkop
+/etc/init.d/forkop start >/dev/null 2>&1 || true
 
-# Запускаем сам forkop-mgr с обязательным возвратом управления клавиатуре
-if [ -c /dev/tty ]; then
-    exec "$DEST" < /dev/tty
-else
-    exec "$DEST"
-fi
+echo "Установка успешно завершена!"
+echo ""
+echo "========================================================"
+echo "  Для запуска панели управления введите команду:"
+echo "  forkop-mgr"
+echo "========================================================"
