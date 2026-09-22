@@ -63,36 +63,24 @@ get_netbird_status() {
     fi
 }
 
-# ==========================================
-# УМНЫЙ ЗАГРУЗЧИК С ЗАЩИТОЙ ОТ FAKE-IP
-# ==========================================
 safe_curl() {
-    # 1. Если доступен локальный прокси Forkop — всегда идем через него
     if nc -z 127.0.0.1 4534 2>/dev/null; then
-        curl -sL -x "$PROXY" --connect-timeout 15 "$@"
+        curl -sLf -x "$PROXY" --connect-timeout 15 "$@"
         return 0
     fi
-
-    # 2. Если прокси недоступен, проверяем, не попадаем ли мы в Fake-IP
     TEST_IP=$(nslookup raw.githubusercontent.com 2>/dev/null | grep 'Address:' | tail -n1 | awk '{print $2}')
     case "$TEST_IP" in
         198.18.*)
-            # Мы в ловушке Fake-IP без запущенного прокси! Запрашиваем через реальный DNS 1.1.1.1
             REAL_IP=$(nslookup raw.githubusercontent.com 1.1.1.1 2>/dev/null | grep 'Address:' | grep -v '1.1.1.1' | tail -n1 | awk '{print $2}')
             if [ -n "$REAL_IP" ]; then
-                curl -sL --resolve "raw.githubusercontent.com:443:$REAL_IP" --connect-timeout 15 "$@"
+                curl -sLf --resolve "raw.githubusercontent.com:443:$REAL_IP" --connect-timeout 15 "$@"
                 return 0
             fi
             ;;
     esac
-
-    # 3. Стандартный прямой запрос
-    curl -sL --connect-timeout 15 "$@"
+    curl -sLf --connect-timeout 15 "$@"
 }
 
-# ==========================================
-# 1. МОДУЛЬ SING-BOX EXTENDED
-# ==========================================
 sb_rollback() {
     echo ""
     printf "${RED}==================================================${NC}\n"
@@ -231,9 +219,6 @@ menu_singbox() {
     printf "${GREEN}%s $V_CLEAN!${NC}\n" "$(t "Ядро успешно обновлено до версии" "Kernel successfully updated to version")"
 }
 
-# ==========================================
-# 2. МОДУЛЬ ОБНОВЛЕНИЯ FORKOP
-# ==========================================
 menu_forkop() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
@@ -312,9 +297,6 @@ menu_forkop() {
     printf "${GREEN}%s${NC}\n" "$(t "Обновление Forkop успешно завершено!" "Forkop update successfully finished!")"
 }
 
-# ==========================================
-# 3. МОДУЛЬ БЭКАПОВ
-# ==========================================
 menu_backup() {
     while true; do
         echo ""
@@ -403,9 +385,6 @@ menu_backup() {
     done
 }
 
-# ==========================================
-# 4. МОДУЛЬ ДИАГНОСТИКИ И ПЕРЕЗАПУСКА
-# ==========================================
 menu_diag() {
     echo ""
     echo "=== $(t "Диагностика и мягкий перезапуск" "Diagnostics & Soft Restart") ==="
@@ -429,9 +408,6 @@ menu_diag() {
     printf "${GREEN}%s${NC}\n" "$(t "Перезапуск завершен! Туннели и списки синхронизированы." "Restart complete! Tunnels & lists synced.")"
 }
 
-# ==========================================
-# ГЛАВНЫЙ ЦИКЛ
-# ==========================================
 while true; do
     echo ""
     printf "${CYAN}========================================================${NC}\n"
