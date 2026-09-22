@@ -1,3 +1,4 @@
+cat << 'EOF' > /usr/bin/forkop-mgr
 #!/bin/sh
 set -e
 
@@ -19,6 +20,7 @@ RED='\033[31m'
 CYAN='\033[36m'
 NC='\033[0m'
 
+# Инициализация языка
 if [ -f "$LANG_FILE" ]; then
     APP_LANG=$(cat "$LANG_FILE")
 else
@@ -69,6 +71,7 @@ get_netbird_status() {
     fi
 }
 
+# Безопасный загрузчик
 safe_curl() {
     if nc -z 127.0.0.1 4534 2>/dev/null; then
         curl -sLf -x "$PROXY" --connect-timeout 15 "$@"
@@ -87,6 +90,9 @@ safe_curl() {
     curl -sLf --connect-timeout 15 "$@"
 }
 
+# ==========================================
+# 1. МОДУЛЬ SING-BOX EXTENDED
+# ==========================================
 sb_rollback() {
     echo ""
     printf "${RED}==================================================${NC}\n"
@@ -246,6 +252,9 @@ menu_singbox() {
     printf "${GREEN}%s $V_CLEAN!${NC}\n" "$(t "Ядро успешно обновлено до версии" "Kernel successfully updated to version")"
 }
 
+# ==========================================
+# 2. МОДУЛЬ ОБНОВЛЕНИЯ FORKOP
+# ==========================================
 menu_forkop() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
@@ -331,6 +340,9 @@ menu_forkop() {
     printf "${GREEN}%s${NC}\n" "$(t "Обновление Forkop успешно завершено!" "Forkop update successfully finished!")"
 }
 
+# ==========================================
+# 3. МОДУЛЬ БЭКАПОВ
+# ==========================================
 menu_backup() {
     while true; do
         echo ""
@@ -345,116 +357,115 @@ menu_backup() {
         printf "%s: " "$(t "Выбор [0-3]" "Choice [0-3]")"
         read -r B_CH
 
-        case "$B_CH" in
-            1)
-                TS=$(date +%Y%m%d_%H%M%S)
-                FNAME="forkop_backup_${TS}.tar.gz"
-                TPERM="$PERM_BACKUP_DIR/$FNAME"
-                TTMP="/tmp/$FNAME"
-                FLIST=""
-                for item in /etc/config/forkop /etc/forkop /etc/netbird /etc/config/netbird /usr/bin/forkop-mgr /etc/config/dhcp /etc/crontabs/root; do
-                    if [ -e "$item" ]; then
-                        FLIST="$FLIST $item"
-                    fi
-                done
-                tar -czf "$TPERM" $FLIST
-                cp -f "$TPERM" "$TTMP"
-                printf "${GREEN}%s: $TPERM${NC}\n" "$(t "Бэкап создан" "Backup created")"
-                echo "$(t "Команда для скачивания на любой ПК (в текущую папку терминала):" "Command to download to any PC (to current folder):")"
-                echo "scp -O root@192.168.11.1:$TTMP ."
-                ;;
-            2)
-                FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
-                if [ -z "$FOUND" ]; then
-                    printf "${YELLOW}%s${NC}\n" "$(t "Бэкапы не найдены!" "No backups found!")"
-                    continue
+        if [ "$B_CH" = "1" ]; then
+            TS=$(date +%Y%m%d_%H%M%S)
+            FNAME="forkop_backup_${TS}.tar.gz"
+            TPERM="$PERM_BACKUP_DIR/$FNAME"
+            TTMP="/tmp/$FNAME"
+            FLIST=""
+            for item in /etc/config/forkop /etc/forkop /etc/netbird /etc/config/netbird /usr/bin/forkop-mgr /etc/config/dhcp /etc/crontabs/root; do
+                if [ -e "$item" ]; then
+                    FLIST="$FLIST $item"
                 fi
-                echo ""
-                echo "$(t "Доступные бэкапы:" "Available backups:")"
-                C=0
-                for f in $FOUND; do
-                    C=$((C + 1))
-                    eval "BF_$C=\"$f\""
-                    echo "  $C) $f ($(ls -lh "$f" | awk '{print $5}'))"
-                done
-                echo "  0) $(t "Отмена" "Cancel")"
-                printf "%s: " "$(t "Выберите номер [0-$C]" "Select number [0-$C]")"
-                read -r SEL
-                if [ "$SEL" = "0" ] || [ -z "$SEL" ]; then
-                    continue
-                fi
-                eval "CF=\"\$BF_$SEL\""
-                if [ ! -f "$CF" ]; then
-                    echo "$(t "Неверный выбор" "Invalid choice")"
-                    continue
-                fi
+            done
+            tar -czf "$TPERM" $FLIST
+            cp -f "$TPERM" "$TTMP"
+            printf "${GREEN}%s: $TPERM${NC}\n" "$(t "Бэкап создан" "Backup created")"
+            echo "$(t "Команда для скачивания на любой ПК (в текущую папку терминала):" "Command to download to any PC (to current folder):")"
+            echo "scp -O root@192.168.11.1:$TTMP ."
+        elif [ "$B_CH" = "2" ]; then
+            FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
+            if [ -z "$FOUND" ]; then
+                printf "${YELLOW}%s${NC}\n" "$(t "Бэкапы не найдены!" "No backups found!")"
+                continue
+            fi
+            echo ""
+            echo "$(t "Доступные бэкапы:" "Available backups:")"
+            C=0
+            for f in $FOUND; do
+                C=$((C + 1))
+                eval "BF_$C=\"$f\""
+                echo "  $C) $f ($(ls -lh "$f" | awk '{print $5}'))"
+            done
+            echo "  0) $(t "Отмена" "Cancel")"
+            printf "%s: " "$(t "Выберите номер [0-$C]" "Select number [0-$C]")"
+            read -r SEL
+            if [ "$SEL" = "0" ] || [ -z "$SEL" ]; then
+                continue
+            fi
+            eval "CF=\"\$BF_$SEL\""
+            if [ ! -f "$CF" ]; then
+                echo "$(t "Неверный выбор" "Invalid choice")"
+                continue
+            fi
 
-                printf "%s $CF? [y/N]: " "$(t "Применить бэкап" "Apply backup")"
-                read -r CONF
-                case "$CONF" in
-                    y|Y|yes|YES) ;;
-                    *) continue ;;
-                esac
+            printf "%s $CF? [y/N]: " "$(t "Применить бэкап" "Apply backup")"
+            read -r CONF
+            if [ "$CONF" != "y" ] && [ "$CONF" != "Y" ] && [ "$CONF" != "yes" ] && [ "$CONF" != "YES" ]; then
+                continue
+            fi
 
-                echo "$(t "Проверка архива и создание аварийного снимка..." "Checking archive & taking emergency snapshot...")"
-                if ! tar -tzf "$CF" >/dev/null 2>&1; then
-                    echo "$(t "Архив поврежден!" "Archive corrupted!")"
-                    continue
-                fi
-                SNAP="/tmp/pre_restore_snap"
-                rm -rf "$SNAP"
-                mkdir -p "$SNAP"
-                [ -f /etc/config/forkop ] && cp -f /etc/config/forkop "$SNAP/"
-                [ -d /etc/netbird ] && cp -rf /etc/netbird "$SNAP/"
+            echo "$(t "Проверка архива и создание аварийного снимка..." "Checking archive & taking emergency snapshot...")"
+            if ! tar -tzf "$CF" >/dev/null 2>&1; then
+                echo "$(t "Архив поврежден!" "Archive corrupted!")"
+                continue
+            fi
+            SNAP="/tmp/pre_restore_snap"
+            rm -rf "$SNAP"
+            mkdir -p "$SNAP"
+            if [ -f /etc/config/forkop ]; then cp -f /etc/config/forkop "$SNAP/"; fi
+            if [ -d /etc/netbird ]; then cp -rf /etc/netbird "$SNAP/"; fi
 
-                echo "$(t "Распаковка..." "Extracting...")"
-                if ! tar -xzf "$CF" -C /; then
-                    echo "$(t "Ошибка распаковки! Откат..." "Extraction error! Rolling back...")"
-                    [ -f "$SNAP/forkop" ] && cp -f "$SNAP/forkop" /etc/config/forkop
-                    continue
-                fi
-                [ -f /usr/bin/forkop-mgr ] && chmod +x /usr/bin/forkop-mgr
+            echo "$(t "Распаковка..." "Extracting...")"
+            if ! tar -xzf "$CF" -C /; then
+                echo "$(t "Ошибка распаковки! Откат..." "Extraction error! Rolling back...")"
+                if [ -f "$SNAP/forkop" ]; then cp -f "$SNAP/forkop" /etc/config/forkop; fi
+                continue
+            fi
+            if [ -f /usr/bin/forkop-mgr ]; then chmod +x /usr/bin/forkop-mgr; fi
 
-                echo "$(t "Перезапуск NetBird и Forkop..." "Restarting NetBird & Forkop...")"
-                /etc/init.d/netbird restart || true
-                sleep 2
-                /etc/init.d/forkop restart || true
-                rm -rf "$SNAP"
-                printf "${GREEN}%s${NC}\n" "$(t "Система успешно восстановлена!" "System successfully restored!")"
-                ;;
-            3)
-                FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
-                if [ -z "$FOUND" ]; then
-                    printf "${YELLOW}%s${NC}\n" "$(t "Бэкапы не найдены!" "No backups found!")"
-                    continue
-                fi
-                C=0
-                for f in $FOUND; do
-                    C=$((C + 1))
-                    eval "BF_$C=\"$f\""
-                    echo "  $C) $f"
-                done
-                printf "%s: " "$(t "Выберите номер [0-$C]" "Select number [0-$C]")"
-                read -r SEL
-                if [ "$SEL" = "0" ] || [ -z "$SEL" ]; then
-                    continue
-                fi
-                eval "CF=\"\$BF_$SEL\""
-                tar -ztvf "$CF"
-                ;;
-            *) break ;;
-        esac
+            echo "$(t "Перезапуск NetBird и Forkop..." "Restarting NetBird & Forkop...")"
+            /etc/init.d/netbird restart || true
+            sleep 2
+            /etc/init.d/forkop restart || true
+            rm -rf "$SNAP"
+            printf "${GREEN}%s${NC}\n" "$(t "Система успешно восстановлена!" "System successfully restored!")"
+        elif [ "$B_CH" = "3" ]; then
+            FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
+            if [ -z "$FOUND" ]; then
+                printf "${YELLOW}%s${NC}\n" "$(t "Бэкапы не найдены!" "No backups found!")"
+                continue
+            fi
+            C=0
+            for f in $FOUND; do
+                C=$((C + 1))
+                eval "BF_$C=\"$f\""
+                echo "  $C) $f"
+            done
+            printf "%s: " "$(t "Выберите номер [0-$C]" "Select number [0-$C]")"
+            read -r SEL
+            if [ "$SEL" = "0" ] || [ -z "$SEL" ]; then
+                continue
+            fi
+            eval "CF=\"\$BF_$SEL\""
+            tar -ztvf "$CF"
+        else
+            break
+        fi
     done
 }
 
+# ==========================================
+# 4. МОДУЛЬ ДИАГНОСТИКИ И ПЕРЕЗАПУСКА
+# ==========================================
 menu_diag() {
     echo ""
     echo "=== $(t "Диагностика и мягкий перезапуск" "Diagnostics & Soft Restart") ==="
     echo "1. $(t "Остановка Forkop (возврат прямого DNS)..." "Stopping Forkop (restoring direct DNS)...")"
     /etc/init.d/forkop stop || true
-    echo "2. Перезапуск NetBird..."
+    echo "2. $(t "Перезапуск NetBird..." "Restarting NetBird...")"
     /etc/init.d/netbird restart || true
-    echo "3. Ожидание интерфейса wt0..."
+    echo "3. $(t "Ожидание интерфейса wt0..." "Waiting for wt0 interface...")"
     W=0
     while [ $W -lt 15 ]; do
         if ip a show wt0 2>/dev/null | grep -q "inet "; then
@@ -472,6 +483,9 @@ menu_diag() {
     printf "${GREEN}%s${NC}\n" "$(t "Перезапуск завершен! Туннели и списки синхронизированы." "Restart complete! Tunnels & lists synced.")"
 }
 
+# ==========================================
+# ГЛАВНЫЙ ЦИКЛ
+# ==========================================
 while true; do
     echo ""
     printf "${CYAN}========================================================${NC}\n"
@@ -502,3 +516,6 @@ while true; do
         *) echo "$(t "Неверный ввод." "Invalid input.")" ;;
     esac
 done
+EOF
+
+chmod +x /usr/bin/forkop-mgr
