@@ -24,6 +24,7 @@ GREEN='\033[32m'
 YELLOW='\033[33m'
 RED='\033[31m'
 CYAN='\033[36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 mkdir -p "$APP_DIR"
@@ -61,6 +62,22 @@ msg_warn() {
 
 msg_err() {
     printf "${RED}%s${NC}\n" "$1"
+}
+
+step_start() {
+    printf "  ▶ %-42s " "$1"
+}
+
+step_done() {
+    printf "${GREEN}[OK]${NC}\n"
+}
+
+step_done_info() {
+    printf "${GREEN}[OK: %s]${NC}\n" "$1"
+}
+
+step_fail() {
+    printf "${RED}[FAIL]${NC}\n"
 }
 
 toggle_lang() {
@@ -146,14 +163,19 @@ wait_wt0() {
     timeout="${1:-30}"
     i=0
 
+    printf "  ▶ %s " "$(t "Ожидание интерфейса wt0" "Waiting for wt0 interface")"
+
     while [ "$i" -lt "$timeout" ]; do
         if wt0_up; then
+            printf "${GREEN}[OK: %ss]${NC}\n" "$i"
             return 0
         fi
         sleep 1
         i=$((i + 1))
+        printf "."
     done
 
+    printf "${RED}[TIMEOUT]${NC}\n"
     return 1
 }
 
@@ -258,10 +280,11 @@ end_github_session() {
 
 
 # ============================================================
-# Network Download Engine (with Anti-Censorship Fallback)
+# Network Download Engine with Progress Indicators
 # ============================================================
 
-download_raw() {
+# Quiet download for small metadata/JSON files
+download_quiet() {
     url="$1"
     output="$2"
 
@@ -269,11 +292,34 @@ download_raw() {
         curl -4 -fsSL \
             -H "User-Agent: $GITHUB_UA" \
             --connect-timeout 15 \
-            --max-time 600 \
+            --max-time 60 \
             "$url" -o "$output"
         return $?
     elif have_cmd wget; then
         wget -4 -q \
+            --timeout=20 \
+            -O "$output" "$url"
+        return $?
+    fi
+
+    return 1
+}
+
+# Download with visual progress bar for large files (binaries, APKs)
+download_with_progress() {
+    url="$1"
+    output="$2"
+
+    if have_cmd curl; then
+        # curl -# displays a clean, single-line progress bar: [#####....] 100%
+        curl -4 -fSL -# \
+            -H "User-Agent: $GITHUB_UA" \
+            --connect-timeout 15 \
+            --max-time 600 \
+            "$url" -o "$output"
+        return $?
+    elif have_cmd wget; then
+        wget -4 \
             --timeout=30 \
             -O "$output" "$url"
         return $?
@@ -288,13 +334,12 @@ github_get() {
 
     begin_github_session
 
-    if download_raw "$url" "$output" && [ -s "$output" ]; then
+    if download_quiet "$url" "$output" && [ -s "$output" ]; then
         return 0
     fi
 
-    # Fallback mirrors in case of censor blocking
     for proxy in "https://ghproxy.net/" "https://gh-proxy.com/"; do
-        if download_raw "${proxy}${url}" "$output" && [ -s "$output" ]; then
+        if download_quiet "${proxy}${url}" "$output" && [ -s "$output" ]; then
             return 0
         fi
     done
@@ -309,7 +354,7 @@ github_download() {
 
     begin_github_session
 
-    if download_raw "$url" "$output" && [ -s "$output" ]; then
+    if download_with_progress "$url" "$output" && [ -s "$output" ]; then
         return 0
     fi
 
@@ -318,7 +363,7 @@ github_download() {
         "Direct download failed. Connecting via bypass mirror...")"
 
     for proxy in "https://ghproxy.net/" "https://gh-proxy.com/"; do
-        if download_raw "${proxy}${url}" "$output" && [ -s "$output" ]; then
+        if download_with_progress "${proxy}${url}" "$output" && [ -s "$output" ]; then
             return 0
         fi
     done
@@ -434,6 +479,7 @@ singbox_rollback() {
     old_version="$1"
     old_running="$2"
 
+    echo ""
     msg_err "$(t \
         "Ошибка! Выполняется автоматический откат..." \
         "Error! Performing automatic rollback...")"
@@ -473,17 +519,19 @@ menu_singbox() {
     mkdir -p "$SB_TMP/work" "$SB_TMP/backup"
 
     echo ""
-    echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
+    step_start "$(t "Запрос списка релизов на GitHub..." "Querying GitHub releases...")"
 
     releases="$SB_TMP/releases.json"
 
     if ! github_get "https://api.github.com/repos/${SB_REPO}/releases?per_page=10" "$releases"; then
+        step_fail
         msg_err "$(t \
             "Не удалось получить список релизов Sing-Box." \
             "Failed to retrieve Sing-Box releases.")"
         end_github_session
         return
     fi
+    step_done
 
     tags="$(release_tags "$releases")"
 
@@ -548,15 +596,17 @@ menu_singbox() {
     release="$SB_TMP/release.json"
 
     echo ""
-    echo "$(t "Получение информации о выбранном релизе..." "Getting selected release information...")"
+    step_start "$(t "Получение метаданных релиза..." "Fetching release metadata...")"
 
     if ! github_get "https://api.github.com/repos/${SB_REPO}/releases/tags/${tag}" "$release"; then
+        step_fail
         msg_err "$(t \
             "Не удалось получить информацию о релизе." \
             "Failed to retrieve release information.")"
         end_github_session
         return
     fi
+    step_done
 
     asset_name="sing-box-${version}-linux-arm64-compressed.tar.gz"
     asset_url="$(find_asset "$release" "$asset_name")"
@@ -576,8 +626,8 @@ menu_singbox() {
     archive="$SB_TMP/work/sing-box.tar.gz"
 
     echo ""
-    echo "=== [1/6] $(t "Скачивание" "Downloading") ==="
-    echo "$asset_url"
+    echo "=== [1/6] $(t "Скачивание ядра Sing-Box" "Downloading Sing-Box kernel") ==="
+    echo "  $asset_name"
 
     if ! github_download "$asset_url" "$archive"; then
         msg_err "$(t \
@@ -587,25 +637,31 @@ menu_singbox() {
         return
     fi
 
-    # All downloads completed, session can be closed
     end_github_session
 
-    echo "=== [2/6] $(t "Проверка архива" "Checking archive") ==="
+    echo ""
+    echo "=== [2/6] $(t "Проверка и распаковка" "Verifying & unpacking") ==="
+    step_start "$(t "Проверка целостности архива..." "Checking archive integrity...")"
 
     if ! tar -tzf "$archive" >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t \
             "Архив повреждён или имеет неверный формат." \
             "Archive is corrupt or has an invalid format.")"
         return
     fi
+    step_done
 
     rm -rf "$SB_TMP/work/extracted"
     mkdir -p "$SB_TMP/work/extracted"
 
-    if ! tar -xzf "$archive" -C "$SB_TMP/work/extracted"; then
+    step_start "$(t "Распаковка файлов..." "Extracting files...")"
+    if ! tar -xzf "$archive" -C "$SB_TMP/work/extracted" 2>/dev/null; then
+        step_fail
         msg_err "$(t "Ошибка распаковки." "Extraction failed.")"
         return
     fi
+    step_done
 
     bin_file="$(find "$SB_TMP/work/extracted" -type f -name sing-box 2>/dev/null | head -n 1)"
 
@@ -618,11 +674,14 @@ menu_singbox() {
 
     chmod +x "$bin_file"
 
+    echo ""
     echo "=== [3/6] $(t "Проверка бинарника" "Binary validation") ==="
+    step_start "$(t "Проверка версии бинарника..." "Checking binary version...")"
 
     test_version="$("$bin_file" version 2>/dev/null | head -n 1 | awk '{print $3}')"
 
     if [ "$test_version" != "$version" ]; then
+        step_fail
         msg_err "$(t \
             "Версия бинарника не совпадает с выбранным релизом." \
             "Binary version does not match selected release.")"
@@ -630,7 +689,9 @@ menu_singbox() {
         echo "Actual:   $test_version"
         return
     fi
+    step_done_info "$test_version"
 
+    echo ""
     echo "=== [4/6] $(t "Проверка свободного места" "Checking free space") ==="
 
     new_size_kb="$(ls -s "$bin_file" 2>/dev/null | awk '{print $1}')"
@@ -643,17 +704,21 @@ menu_singbox() {
 
     available_after_replace=$((free_kb + old_size_kb))
 
-    echo "$(t "Размер нового ядра:" "New kernel size:") ${new_size_kb} KB"
-    echo "$(t "Доступно при замене:" "Available with replacement:") ${available_after_replace} KB"
-
+    step_start "$(t "Проверка места в /overlay..." "Checking /overlay free space...")"
     if [ "$available_after_replace" -lt "$new_size_kb" ]; then
+        step_fail
         msg_err "$(t \
             "Недостаточно места в /overlay." \
             "Not enough space in /overlay.")"
+        echo "Need:      ${new_size_kb} KB"
+        echo "Available: ${available_after_replace} KB"
         return
     fi
+    step_done_info "Need: ${new_size_kb}KB, Avail: ${available_after_replace}KB"
 
+    echo ""
     echo "=== [5/6] $(t "Создание RAM snapshot" "Creating RAM snapshot") ==="
+    step_start "$(t "Резервная копия текущего ядра..." "Backing up current kernel...")"
 
     old_running=0
     if forkop_running; then
@@ -662,52 +727,65 @@ menu_singbox() {
 
     if [ -f /usr/bin/sing-box ]; then
         cp -f /usr/bin/sing-box "$SB_TMP/backup/sing-box" || {
+            step_fail
             msg_err "$(t \
                 "Не удалось сохранить старое ядро." \
                 "Failed to back up current kernel.")"
             return
         }
     fi
+    step_done
 
+    echo ""
     echo "=== [6/6] $(t "Установка и проверка запуска" "Installing and checking startup") ==="
 
+    step_start "$(t "Остановка старого процесса..." "Stopping old process...")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
-
     killall -9 sing-box 2>/dev/null || true
     sleep 1
+    step_done
 
+    step_start "$(t "Замена бинарного файла..." "Replacing binary file...")"
     if ! cp -f "$bin_file" /usr/bin/sing-box; then
+        step_fail
         singbox_rollback "$current" "$old_running"
         return
     fi
-
     chmod +x /usr/bin/sing-box
+    step_done
 
     sync_singbox_version "$version"
     clear_luci_cache
 
     if [ "$old_running" = "1" ]; then
-        if ! start_forkop_safe; then
+        step_start "$(t "Запуск службы Forkop..." "Starting Forkop service...")"
+        if ! start_forkop_safe >/dev/null 2>&1; then
+            step_fail
             msg_err "$(t \
                 "Forkop не удалось запустить после обновления." \
                 "Forkop failed to start after update.")"
             singbox_rollback "$current" "$old_running"
             return
         fi
+        step_done
 
-        # Allow sing-box up to 10 seconds to compile/load routing rules
+        # Animated check loop for sing-box process
+        printf "  ▶ %s " "$(t "Ожидание запуска sing-box" "Waiting for sing-box startup")"
         sb_started=0
         for i in $(seq 1 10); do
             if pidof sing-box >/dev/null 2>&1 || pgrep -f sing-box >/dev/null 2>&1; then
                 sb_started=1
+                printf "${GREEN}[OK: %ss]${NC}\n" "$i"
                 break
             fi
             sleep 1
+            printf "."
         done
 
         if [ "$sb_started" != "1" ]; then
+            printf "${RED}[FAIL]${NC}\n"
             msg_err "$(t \
                 "Sing-Box не запустился после обновления." \
                 "Sing-Box did not start after update.")"
@@ -718,6 +796,7 @@ menu_singbox() {
         fi
     fi
 
+    echo ""
     msg_ok "$(t \
         "Sing-Box успешно обновлён до" \
         "Sing-Box successfully updated to") $version"
@@ -737,17 +816,19 @@ menu_forkop() {
     mkdir -p "$FK_TMP"
 
     echo ""
-    echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
+    step_start "$(t "Запрос последнего релиза Forkop..." "Querying latest Forkop release...")"
 
     latest="$FK_TMP/latest.json"
 
     if ! github_get "https://api.github.com/repos/${FK_REPO}/releases/latest" "$latest"; then
+        step_fail
         msg_err "$(t \
             "Не удалось получить последний релиз Forkop." \
             "Failed to retrieve latest Forkop release.")"
         end_github_session
         return
     fi
+    step_done
 
     tag="$(json_values "$(cat "$latest")" "tag_name" | head -n 1)"
 
@@ -787,13 +868,18 @@ menu_forkop() {
 
     release="$FK_TMP/release.json"
 
+    echo ""
+    step_start "$(t "Получение метаданных релиза..." "Fetching release metadata...")"
+
     if ! github_get "https://api.github.com/repos/${FK_REPO}/releases/tags/${tag}" "$release"; then
+        step_fail
         msg_err "$(t \
             "Не удалось получить информацию о релизе Forkop." \
             "Failed to retrieve Forkop release information.")"
         end_github_session
         return
     fi
+    step_done
 
     core_name="forkop_${version}.apk"
     luci_name="luci-app-forkop_${version}.apk"
@@ -810,10 +896,12 @@ menu_forkop() {
     fi
 
     echo ""
-    echo "=== [1/5] $(t "Сохранение конфигурации" "Backing up configuration") ==="
+    echo "=== [1/4] $(t "Сохранение конфигурации" "Backing up configuration") ==="
+    step_start "$(t "Резервная копия forkop.config..." "Backing up forkop.config...")"
 
     if [ -f /etc/config/forkop ]; then
         cp -f /etc/config/forkop "$FK_TMP/forkop.config" || {
+            step_fail
             msg_err "$(t \
                 "Не удалось сохранить конфигурацию Forkop." \
                 "Failed to back up Forkop configuration.")"
@@ -821,20 +909,22 @@ menu_forkop() {
             return
         }
     fi
+    step_done
 
-    echo "=== [2/5] $(t "Скачивание пакетов" "Downloading packages") ==="
+    echo ""
+    echo "=== [2/4] $(t "Скачивание пакетов" "Downloading packages") ==="
 
     core_apk="$FK_TMP/$core_name"
     luci_apk="$FK_TMP/$luci_name"
 
-    echo "$core_url"
+    echo "  $core_name"
     if ! github_download "$core_url" "$core_apk"; then
         msg_err "$(t "Не удалось скачать forkop APK." "Failed to download Forkop APK.")"
         end_github_session
         return
     fi
 
-    echo "$luci_url"
+    echo "  $luci_name"
     if ! github_download "$luci_url" "$luci_apk"; then
         msg_err "$(t "Не удалось скачать luci-app-forkop APK." "Failed to download luci-app-forkop APK.")"
         end_github_session
@@ -843,15 +933,17 @@ menu_forkop() {
 
     end_github_session
 
-    echo "=== [3/5] $(t "Проверка APK" "Checking APK files") ==="
-
-    echo "=== [4/5] $(t "Установка через apk" "Installing with apk") ==="
-
+    echo ""
+    echo "=== [3/4] $(t "Установка через apk" "Installing with apk") ==="
+    step_start "$(t "Остановка службы..." "Stopping service...")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
+    step_done
 
-    if ! apk add --allow-untrusted "$core_apk" "$luci_apk"; then
+    step_start "$(t "Установка пакетов apk..." "Installing apk packages...")"
+    if ! apk add --allow-untrusted "$core_apk" "$luci_apk" >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t \
             "apk не смог установить пакеты." \
             "apk failed to install packages.")"
@@ -863,8 +955,10 @@ menu_forkop() {
         start_forkop_safe >/dev/null 2>&1 || true
         return
     fi
+    step_done
 
-    echo "=== [5/5] $(t "Проверка NetBird и запуск Forkop" "Checking NetBird and starting Forkop") ==="
+    echo ""
+    echo "=== [4/4] $(t "Восстановление и запуск" "Restoring & starting") ==="
 
     if [ -f "$FK_TMP/forkop.config" ]; then
         cp -f "$FK_TMP/forkop.config" /etc/config/forkop
@@ -872,13 +966,17 @@ menu_forkop() {
 
     clear_luci_cache
 
-    if ! start_forkop_safe; then
+    step_start "$(t "Безопасный запуск Forkop..." "Safe starting Forkop...")"
+    if ! start_forkop_safe >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t \
             "Forkop установлен, но безопасный запуск не удался." \
             "Forkop was installed, but safe startup failed.")"
         return
     fi
+    step_done
 
+    echo ""
     msg_ok "$(t \
         "Forkop успешно обновлён до" \
         "Forkop successfully updated to") $version"
@@ -913,23 +1011,28 @@ backup_create() {
         fi
     done
 
-    if ! tar -czf "$permanent" -T "$list"; then
+    echo ""
+    step_start "$(t "Создание архива конфигураций..." "Creating config archive...")"
+
+    if ! tar -czf "$permanent" -T "$list" 2>/dev/null; then
+        step_fail
         rm -f "$permanent"
         msg_err "$(t "Не удалось создать бэкап." "Failed to create backup.")"
         return
     fi
+    step_done
 
-    cp -f "$permanent" "$temporary"
+    cp -f "$permanent" "$temporary" 2>/dev/null || true
 
-    msg_ok "$(t "Бэкап создан:" "Backup created:")"
-    echo "$permanent"
     echo ""
-    echo "$(t "Команда для скачивания:" "Download command:")"
-    echo "scp -O root@192.168.11.1:$temporary ."
+    msg_ok "$(t "Бэкап создан:" "Backup created:")"
+    echo "  $permanent"
+    echo ""
+    echo "$(t "Команда для скачивания на ПК:" "Download command for PC:")"
+    echo "  scp -O root@192.168.11.1:$temporary ."
 }
 
 backup_list() {
-    # Deduplicate backups: prioritize persistent storage over /tmp duplicates
     find "$BACKUP_DIR" /tmp \
         -maxdepth 1 \
         -type f \
@@ -963,7 +1066,6 @@ backup_restore() {
     printf "%s [0-%s]: " "$(t "Выберите бэкап" "Select backup")" "$n"
     read -r choice
 
-    # Validate integer input to avoid eval syntax errors
     case "$choice" in
         ''|*[!0-9]*) return ;;
     esac
@@ -985,10 +1087,13 @@ backup_restore() {
         return
     fi
 
+    step_start "$(t "Проверка целостности архива..." "Checking archive integrity...")"
     if ! tar -tzf "$selected" >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t "Архив повреждён." "Archive is corrupt.")"
         return
     fi
+    step_done
 
     restore_tmp="$TMP_ROOT/restore"
     mkdir -p "$restore_tmp"
@@ -1012,18 +1117,25 @@ backup_restore() {
         fi
     done
 
-    if ! tar -czf "$pre_restore" -T "$current_list"; then
+    step_start "$(t "Создание аварийного snapshot..." "Creating rollback snapshot...")"
+    if ! tar -czf "$pre_restore" -T "$current_list" 2>/dev/null; then
+        step_fail
         msg_err "$(t \
             "Не удалось создать аварийный snapshot." \
             "Failed to create emergency snapshot.")"
         return
     fi
+    step_done
 
+    step_start "$(t "Остановка текущей службы..." "Stopping current service...")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
+    step_done
 
-    if ! tar -xzf "$selected" -C /; then
+    step_start "$(t "Восстановление файлов из архива..." "Restoring files from archive...")"
+    if ! tar -xzf "$selected" -C / 2>/dev/null; then
+        step_fail
         msg_err "$(t \
             "Ошибка восстановления. Выполняется rollback." \
             "Restore failed. Performing rollback.")"
@@ -1032,15 +1144,17 @@ backup_restore() {
         start_forkop_safe >/dev/null 2>&1 || true
         return
     fi
-
     chmod +x /usr/bin/forkop-mgr 2>/dev/null || true
+    step_done
 
+    step_start "$(t "Проверка туннеля NetBird..." "Checking NetBird tunnel...")"
     if ! wt0_up; then
         if [ -x /etc/init.d/netbird ]; then
             /etc/init.d/netbird restart >/dev/null 2>&1 || true
         fi
 
         if ! wait_wt0 30; then
+            step_fail
             msg_err "$(t \
                 "NetBird не поднялся. Выполняется rollback." \
                 "NetBird did not come up. Performing rollback.")"
@@ -1050,8 +1164,11 @@ backup_restore() {
             return
         fi
     fi
+    step_done
 
-    if ! start_forkop_safe; then
+    step_start "$(t "Запуск восстановленной службы..." "Starting restored service...")"
+    if ! start_forkop_safe >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t \
             "Forkop не запустился. Выполняется rollback." \
             "Forkop failed to start. Performing rollback.")"
@@ -1061,7 +1178,9 @@ backup_restore() {
         start_forkop_safe >/dev/null 2>&1 || true
         return
     fi
+    step_done
 
+    echo ""
     msg_ok "$(t \
         "Система успешно восстановлена." \
         "System successfully restored.")"
@@ -1096,6 +1215,7 @@ backup_menu() {
                     continue
                 }
 
+                echo ""
                 n=0
                 for file in $files; do
                     n=$((n + 1))
@@ -1114,7 +1234,7 @@ backup_menu() {
                 [ "$choice" = "0" ] && continue
                 if [ "$choice" -ge 1 ] && [ "$choice" -le "$n" ]; then
                     eval "selected=\${BACKUP_$choice}"
-                    [ -f "$selected" ] && tar -ztvf "$selected"
+                    [ -f "$selected" ] && tar -ztvf "$selected" 2>/dev/null
                 fi
                 ;;
             *)
@@ -1135,33 +1255,38 @@ menu_diag() {
     echo "  $(t "Диагностика и безопасный перезапуск" "Diagnostics & Safe Restart")"
     echo "=================================================="
 
-    echo "1. $(t "Остановка Forkop..." "Stopping Forkop...")"
+    step_start "1. $(t "Остановка Forkop..." "Stopping Forkop...")"
     /etc/init.d/forkop stop >/dev/null 2>&1 || true
+    step_done
 
-    echo "2. $(t "Перезапуск NetBird..." "Restarting NetBird...")"
+    step_start "2. $(t "Перезапуск NetBird..." "Restarting NetBird...")"
     /etc/init.d/netbird restart >/dev/null 2>&1 || true
+    step_done
 
-    echo "3. $(t "Ожидание wt0..." "Waiting for wt0...")"
+    echo "3. $(t "Ожидание туннеля wt0..." "Waiting for wt0 tunnel...")"
     if ! wait_wt0 30; then
         msg_err "$(t "wt0 не поднялся. Forkop не будет запущен." "wt0 did not come up. Forkop will not be started.")"
         return
     fi
-    msg_ok "$(t "wt0 активен." "wt0 is active.")"
 
-    echo "4. $(t "Запуск Forkop..." "Starting Forkop...")"
-    if ! start_forkop_safe; then
+    step_start "4. $(t "Запуск Forkop..." "Starting Forkop...")"
+    if ! start_forkop_safe >/dev/null 2>&1; then
+        step_fail
         msg_err "$(t "Forkop не удалось запустить." "Forkop failed to start.")"
         return
     fi
+    step_done
 
-    echo "5. $(t "Обновление списков..." "Refreshing lists...")"
+    step_start "5. $(t "Обновление списков и подписок..." "Refreshing lists and subscriptions...")"
     if [ -x /usr/bin/forkop ]; then
         /usr/bin/forkop list_update_if_due >/dev/null 2>&1 || true
         /usr/bin/forkop subscription_update_if_due >/dev/null 2>&1 || true
     fi
+    step_done
 
     clear_luci_cache
 
+    echo ""
     msg_ok "$(t "Безопасный перезапуск завершён." "Safe restart completed.")"
 }
 
