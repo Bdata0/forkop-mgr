@@ -8,7 +8,7 @@
 
 Специально оптимизирован для устройств с компактным разделом `/overlay`, включая **Xiaomi Redmi Router AX6000** со штатной разметкой.
 
-**Languages:** 🇷🇺 Русский · [🇬EN🇧 English](#-english)
+**Languages:** 🇷🇺 Русский · [🇬🇧 English](#-english)
 
 ---
 
