@@ -52,4 +52,10 @@ chmod +x "$DEST"
 
 echo "Установка успешно завершена!"
 echo "Запуск менеджера..."
-exec "$DEST" < /dev/tty
+
+# Запускаем сам forkop-mgr с обязательным возвратом управления клавиатуре
+if [ -c /dev/tty ]; then
+    exec "$DEST" < /dev/tty
+else
+    exec "$DEST"
+fi
