@@ -70,19 +70,15 @@ get_netbird_status() {
     fi
 }
 
-# Проверка порта через netstat (100% совместимо с BusyBox)
 is_proxy_ready() {
     netstat -ln 2>/dev/null | grep -q ":4534 "
 }
 
 safe_curl() {
-    # 1. Если локальный прокси Forkop слушает порт 4534
     if is_proxy_ready; then
         curl -SLf -x "$PROXY" --connect-timeout 25 "$@"
         return 0
     fi
-
-    # 2. Если прокси выключен (прямой запрос с таймаутом)
     curl -SLf --connect-timeout 25 "$@"
 }
 
@@ -112,8 +108,9 @@ menu_singbox() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
 
-    API_DATA=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${SB_REPO}/releases?per_page=5" 2>/dev/null || true)
-    RELEASES=$(echo "$API_DATA" | grep '"tag_name":' | head -n 3 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+    # Опрашиваем теги вместо releases, чтобы видеть все актуальные версии 1.14.x
+    API_DATA=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${SB_REPO}/tags?per_page=10" 2>/dev/null || true)
+    RELEASES=$(echo "$API_DATA" | grep '"name":' | grep 'extended' | head -n 3 | sed -e 's/.*"name": *"//' -e 's/".*//')
 
     if [ -z "$RELEASES" ]; then
         printf "${RED}%s${NC}\n" "$(t "Ошибка: не удалось связаться с GitHub. Проверьте интернет или NetBird." "Error: Failed to reach GitHub. Check internet or NetBird.")"
@@ -249,9 +246,6 @@ menu_singbox() {
     printf "${GREEN}%s $V_CLEAN!${NC}\n" "$(t "Ядро успешно обновлено до версии" "Kernel successfully updated to version")"
 }
 
-# ==========================================
-# 2. МОДУЛЬ ОБНОВЛЕНИЯ FORKOP
-# ==========================================
 menu_forkop() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
@@ -324,7 +318,7 @@ menu_forkop() {
         rm -f /tmp/forkop_config.bak
     fi
 
-    echo "=== [4/4] $(t "Защищенный запуск туннелей и Forkop" "Safe startup of tunnels & Forkop") ==="
+    echo "=== [4/4] Защищенный запуск туннелей и Forkop ==="
     echo "$(t "Перезапуск NetBird..." "Restarting NetBird...")"
     /etc/init.d/netbird restart || true
     echo "$(t "Ожидание интерфейса wt0..." "Waiting for wt0 interface...")"
@@ -344,9 +338,6 @@ menu_forkop() {
     printf "${GREEN}%s${NC}\n" "$(t "Обновление Forkop успешно завершено!" "Forkop update successfully finished!")"
 }
 
-# ==========================================
-# 3. МОДУЛЬ БЭКАПОВ
-# ==========================================
 menu_backup() {
     while true; do
         echo ""
@@ -459,9 +450,6 @@ menu_backup() {
     done
 }
 
-# ==========================================
-# 4. МОДУЛЬ ДИАГНОСТИКИ И ПЕРЕЗАПУСКА
-# ==========================================
 menu_diag() {
     echo ""
     echo "=== $(t "Диагностика и мягкий перезапуск" "Diagnostics & Soft Restart") ==="
@@ -487,9 +475,6 @@ menu_diag() {
     printf "${GREEN}%s${NC}\n" "$(t "Перезапуск завершен! Туннели и списки синхронизированы." "Restart complete! Tunnels & lists synced.")"
 }
 
-# ==========================================
-# ГЛАВНЫЙ ЦИКЛ
-# ==========================================
 while true; do
     echo ""
     printf "${CYAN}========================================================${NC}\n"
