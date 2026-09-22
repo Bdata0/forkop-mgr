@@ -188,7 +188,7 @@ restore_forkop_after_github() {
         start_forkop_safe >/dev/null 2>&1 || \
             msg_warn "$(t \
                 "Forkop не удалось автоматически запустить." \
-                "Forkop could not be started automatically.")
+                "Forkop could not be started automatically.")"
     fi
 }
 
