@@ -1,3 +1,4 @@
+cat << 'EOF' > /usr/bin/forkop-mgr
 #!/bin/sh
 set -e
 
@@ -107,8 +108,9 @@ menu_singbox() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
 
-    API_DATA=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${SB_REPO}/tags?per_page=10" 2>/dev/null || true)
-    RELEASES=$(echo "$API_DATA" | grep '"name":' | grep 'extended' | head -n 3 | sed -e 's/.*"name": *"//' -e 's/".*//')
+    # Запрашиваем 100 тегов и сортируем их натуральной сортировкой версий (sort -V -r)
+    API_DATA=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${SB_REPO}/tags?per_page=100" 2>/dev/null || true)
+    RELEASES=$(echo "$API_DATA" | grep '"name":' | sed -e 's/.*"name": *"//' -e 's/".*//' | grep 'extended' | sort -V -r | head -n 3)
 
     if [ -z "$RELEASES" ]; then
         printf "${RED}%s${NC}\n" "$(t "Ошибка: не удалось связаться с GitHub. Проверьте интернет или NetBird." "Error: Failed to reach GitHub. Check internet or NetBird.")"
@@ -503,3 +505,6 @@ while true; do
         *) echo "$(t "Неверный ввод." "Invalid input.")" ;;
     esac
 done
+EOF
+
+chmod +x /usr/bin/forkop-mgr
