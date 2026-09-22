@@ -1,0 +1,412 @@
+#!/bin/sh
+set -e
+
+SB_REPO="shtorm-7/sing-box-extended"
+FK_REPO="ushan0v/forkop"
+PROXY="http://127.0.0.1:4534"
+ARCH="linux-arm64"
+TMP_DIR="/tmp/sb_update"
+BACKUP_DIR="/tmp/sb_backup"
+PERM_BACKUP_DIR="/etc/forkop_backups"
+APK_DB="/lib/apk/db/installed"
+
+mkdir -p "$PERM_BACKUP_DIR"
+
+GREEN='\033[32m'
+YELLOW='\033[33m'
+RED='\033[31m'
+CYAN='\033[36m'
+NC='\033[0m'
+
+get_singbox_ver() {
+    /usr/bin/sing-box version 2>/dev/null | head -n1 | awk '{print $3}' || echo "не установлена"
+}
+
+get_forkop_ver() {
+    uci get forkop.settings.config_version 2>/dev/null || cat /etc/forkop/sing-box-version 2>/dev/null || echo "1.0.5"
+}
+
+get_netbird_status() {
+    if ip a show wt0 2>/dev/null | grep -q "inet "; then
+        printf "${GREEN}UP (wt0)${NC}"
+    else
+        printf "${RED}DOWN${NC}"
+    fi
+}
+
+# ==========================================
+# 1. МОДУЛЬ SING-BOX EXTENDED
+# ==========================================
+sb_rollback() {
+    echo ""
+    printf "${RED}==================================================${NC}\n"
+    printf "${RED}   [ОШИБКА] Сбой ядра! Запуск автоотката...        ${NC}\n"
+    printf "${RED}==================================================${NC}\n"
+    if [ -f "$BACKUP_DIR/sing-box" ]; then
+        cp -f "$BACKUP_DIR/sing-box" /usr/bin/sing-box
+        chmod +x /usr/bin/sing-box
+    fi
+    if [ -f "$BACKUP_DIR/installed.bak" ] && [ -f "$APK_DB" ]; then
+        cp -f "$BACKUP_DIR/installed.bak" "$APK_DB"
+    fi
+    echo -n "$SB_CUR_VER" > /etc/forkop/sing-box-version 2>/dev/null || true
+    echo -n "$SB_CUR_VER" > /etc/forkop/subscription-cache/sing-box-version 2>/dev/null || true
+    rm -f /tmp/run/forkop/system-info.json 2>/dev/null || true
+    rm -rf /tmp/luci-*cache* /tmp/luci-indexcache* 2>/dev/null || true
+    /etc/init.d/forkop restart || true
+    rm -rf "$TMP_DIR" "$BACKUP_DIR"
+    printf "${GREEN}Откат завершен. Предыдущая версия ядра восстановлена.${NC}\n"
+    exit 1
+}
+
+menu_singbox() {
+    echo ""
+    echo "Подключение к GitHub..."
+    [ -n "$PROXY" ] && export http_proxy="$PROXY" https_proxy="$PROXY" || true
+
+    RELEASES=$(curl -s --connect-timeout 10 "https://api.github.com/repos/${SB_REPO}/releases?per_page=5" \
+        | grep '"tag_name":' | head -n 3 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+
+    if [ -z "$RELEASES" ]; then
+        printf "${RED}Ошибка: не удалось связаться с GitHub. Проверьте интернет или NetBird.${NC}\n"
+        return
+    fi
+
+    TAG1=$(echo "$RELEASES" | sed -n '1p')
+    TAG2=$(echo "$RELEASES" | sed -n '2p')
+    TAG3=$(echo "$RELEASES" | sed -n '3p')
+    SB_CUR_VER=$(get_singbox_ver)
+
+    fmt_tag() {
+        t="$1"
+        c=$(echo "$t" | sed 's/^v//')
+        [ "$c" = "$SB_CUR_VER" ] && echo "$t  \033[32m[текущая]\033[0m" || echo "$t"
+    }
+
+    echo ""
+    echo "=================================================="
+    echo "        Менеджер ядра Sing-Box Extended           "
+    echo "=================================================="
+    echo "Текущая версия в системе: $SB_CUR_VER"
+    echo ""
+    echo "Доступные версии на GitHub:"
+    [ -n "$TAG1" ] && printf "  1) %b\n" "$(fmt_tag "$TAG1")"
+    [ -n "$TAG2" ] && printf "  2) %b\n" "$(fmt_tag "$TAG2")"
+    [ -n "$TAG3" ] && printf "  3) %b\n" "$(fmt_tag "$TAG3")"
+    echo "  0) Назад в главное меню"
+    echo "=================================================="
+    printf "Выберите пункт [0-3]: "
+    read -r CH
+
+    case "$CH" in
+        1) T_TAG="$TAG1" ;;
+        2) T_TAG="$TAG2" ;;
+        3) T_TAG="$TAG3" ;;
+        *) return ;;
+    esac
+
+    V_CLEAN=$(echo "$T_TAG" | sed 's/^v//')
+    if [ "$SB_CUR_VER" = "$V_CLEAN" ]; then
+        echo ""
+        echo "Версия $V_CLEAN уже установлена!"
+        echo "  1) Переустановить принудительно (force)"
+        echo "  0) Отмена"
+        printf "Выбор [0-1]: "
+        read -r SCH
+        [ "$SCH" != "1" ] && return
+    fi
+
+    echo ""
+    echo "=== [1/5] Подготовка пространства в ОЗУ ==="
+    rm -rf "$TMP_DIR" "$BACKUP_DIR"
+    mkdir -p "$TMP_DIR" "$BACKUP_DIR"
+    cd "$TMP_DIR"
+
+    echo "=== [2/5] Скачивание UPX-сжатого архива $T_TAG ==="
+    URL="https://github.com/${SB_REPO}/releases/download/${T_TAG}/sing-box-${V_CLEAN}-${ARCH}-compressed.tar.gz"
+    curl -L --fail --connect-timeout 25 -o archive.tar.gz "$URL"
+
+    tar -xzf archive.tar.gz
+    BIN_FILE=$(find "$TMP_DIR" -type f -name "sing-box" | head -n 1)
+    chmod +x "$BIN_FILE"
+
+    echo "=== [3/5] Самопроверка и контроль памяти ==="
+    TEST_V=$("$BIN_FILE" version | head -n1 | awk '{print $3}')
+    [ "$TEST_V" != "$V_CLEAN" ] && { echo "Бинарник поврежден!"; rm -rf "$TMP_DIR" "$BACKUP_DIR"; return; }
+
+    REQ_SPACE=$(ls -s "$BIN_FILE" | awk '{print $1}')
+    AVAIL_SPACE=$(df -k /overlay | tail -n1 | awk '{print $4}')
+    CUR_SPACE=$(ls -s /usr/bin/sing-box 2>/dev/null | awk '{print $1}' || echo 0)
+    TOTAL_AVAIL=$((AVAIL_SPACE + CUR_SPACE))
+
+    echo "Размер нового ядра: ${REQ_SPACE}KB | Доступно с заменой: ${TOTAL_AVAIL}KB"
+    [ "$TOTAL_AVAIL" -lt "$REQ_SPACE" ] && { printf "${RED}Недостаточно места в /overlay!${NC}\n"; rm -rf "$TMP_DIR" "$BACKUP_DIR"; return; }
+
+    echo "=== [4/5] Создание резервной копии ядра в ОЗУ ==="
+    [ -f /usr/bin/sing-box ] && cp -f /usr/bin/sing-box "$BACKUP_DIR/sing-box"
+    [ -f "$APK_DB" ] && cp -f "$APK_DB" "$BACKUP_DIR/installed.bak"
+
+    echo "=== [5/5] Установка и синхронизация кэша ==="
+    unset http_proxy https_proxy
+    /etc/init.d/forkop stop || true
+    killall -9 sing-box 2>/dev/null || true
+    sleep 1
+
+    rm -f /usr/bin/sing-box
+    if ! mv -f "$BIN_FILE" /usr/bin/sing-box || ! chmod +x /usr/bin/sing-box; then sb_rollback; fi
+    if ! /usr/bin/sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1; then
+        echo "Новое ядро отклонило конфигурацию Forkop!"; sb_rollback
+    fi
+
+    # Обновление метаданных
+    mkdir -p /etc/forkop/subscription-cache
+    echo -n "$V_CLEAN" > /etc/forkop/sing-box-version
+    echo -n "$V_CLEAN" > /etc/forkop/subscription-cache/sing-box-version
+    rm -f /tmp/run/forkop/system-info.json 2>/dev/null || true
+
+    if [ -f "$APK_DB" ]; then
+        awk -v new_ver="$V_CLEAN" '/^P:sing-box/ { found=1 } found && /^V:/ { $0 = "V:" new_ver; found=0 } { print }' "$APK_DB" > "${APK_DB}.tmp" && mv -f "${APK_DB}.tmp" "$APK_DB"
+    fi
+    rm -rf /tmp/luci-*cache* /tmp/luci-indexcache* 2>/dev/null || true
+
+    /etc/init.d/forkop start || sb_rollback
+    sleep 3
+    if ! pgrep sing-box >/dev/null 2>&1; then sb_rollback; fi
+
+    /usr/bin/forkop list_update_if_due || true
+    rm -rf "$TMP_DIR" "$BACKUP_DIR"
+    printf "${GREEN}Ядро успешно обновлено до версии $V_CLEAN!${NC}\n"
+}
+
+# ==========================================
+# 2. МОДУЛЬ ОБНОВЛЕНИЯ FORKOP (ПРЯМАЯ УСТАНОВКА APK)
+# ==========================================
+menu_forkop() {
+    echo ""
+    echo "Подключение к GitHub..."
+    [ -n "$PROXY" ] && export http_proxy="$PROXY" https_proxy="$PROXY" || true
+
+    API_RESP=$(curl -s --connect-timeout 10 -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${FK_REPO}/releases/latest" 2>/dev/null || true)
+    FK_TAG=$(echo "$API_RESP" | grep '"tag_name":' | head -n 1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+    [ -z "$FK_TAG" ] && FK_TAG="1.0.5"
+    FK_LATEST=$(echo "$FK_TAG" | sed 's/^v//')
+    FK_CUR=$(get_forkop_ver)
+
+    echo ""
+    echo "=================================================="
+    echo "           Менеджер обновлений Forkop             "
+    echo "=================================================="
+    echo "Текущая версия Forkop : $FK_CUR"
+    echo "Доступная на GitHub   : $FK_LATEST"
+    echo "=================================================="
+
+    if [ "$FK_CUR" = "$FK_LATEST" ]; then
+        printf "${GREEN}У вас уже установлена актуальная версия!${NC}\n\n"
+        echo "  1) Переустановить принудительно (force)"
+        echo "  0) Назад в главное меню"
+        printf "Выбор [0-1]: "
+        read -r FK_CH
+        [ "$FK_CH" != "1" ] && return
+    else
+        echo "  1) Запустить установку пакетов"
+        echo "  0) Назад в главное меню"
+        printf "Выбор [0-1]: "
+        read -r FK_CH
+        [ "$FK_CH" != "1" ] && return
+    fi
+
+    echo "=== [1/4] Сохранение конфигурации и подготовка ОЗУ ==="
+    FK_TMP="/tmp/fk_update"
+    rm -rf "$FK_TMP"; mkdir -p "$FK_TMP"
+    cp -f /etc/config/forkop /tmp/forkop_config.bak 2>/dev/null || true
+
+    echo "=== [2/4] Скачивание пакетов APK ==="
+    URL_CORE="https://github.com/${FK_REPO}/releases/download/${FK_TAG}/forkop_${FK_LATEST}.apk"
+    URL_LUCI="https://github.com/${FK_REPO}/releases/download/${FK_TAG}/luci-app-forkop_${FK_LATEST}.apk"
+
+    echo "Скачивание core: $URL_CORE"
+    curl -L --fail --connect-timeout 20 -o "$FK_TMP/forkop.apk" "$URL_CORE"
+    echo "Скачивание LuCI: $URL_LUCI"
+    curl -L --fail --connect-timeout 20 -o "$FK_TMP/luci-app-forkop.apk" "$URL_LUCI"
+
+    echo "=== [3/4] Установка пакетов через apk ==="
+    unset http_proxy https_proxy
+    /etc/init.d/forkop stop || true
+
+    # Снимаем блокировку world с sing-box-extended
+    sed -i '/sing-box-extended/d' /etc/apk/world 2>/dev/null || true
+
+    apk add --allow-untrusted "$FK_TMP/forkop.apk" "$FK_TMP/luci-app-forkop.apk"
+    rm -rf "$FK_TMP"
+
+    # Восстановление конфигурации
+    if [ -f /tmp/forkop_config.bak ]; then
+        cp -f /tmp/forkop_config.bak /etc/config/forkop
+        rm -f /tmp/forkop_config.bak
+    fi
+
+    echo "=== [4/4] Защищенный запуск туннелей и Forkop ==="
+    echo "Перезапуск NetBird..."
+    /etc/init.d/netbird restart || true
+    echo "Ожидание интерфейса wt0..."
+    W=0
+    while [ $W -lt 15 ]; do
+        if ip a show wt0 2>/dev/null | grep -q "inet "; then
+            printf "${GREEN}wt0 поднят и активен!${NC}\n"; break
+        fi
+        sleep 1; W=$((W + 1))
+    done
+
+    rm -rf /tmp/luci-*cache* /tmp/luci-indexcache* 2>/dev/null || true
+    /etc/init.d/forkop restart || true
+    /usr/bin/forkop list_update_if_due || true
+    printf "${GREEN}Обновление Forkop успешно завершено!${NC}\n"
+}
+
+# ==========================================
+# 3. МОДУЛЬ БЭКАПОВ
+# ==========================================
+menu_backup() {
+    while true; do
+        echo ""
+        echo "=================================================="
+        echo "         Резервное копирование и откат            "
+        echo "=================================================="
+        echo "  1) Создать полный бэкап системы"
+        echo "  2) Восстановить из бэкапа (с автооткатом)"
+        echo "  3) Посмотреть содержимое бэкапа"
+        echo "  0) Назад в главное меню"
+        echo "=================================================="
+        printf "Выбор [0-3]: "
+        read -r B_CH
+
+        case "$B_CH" in
+            1)
+                TS=$(date +%Y%m%d_%H%M%S)
+                FNAME="forkop_backup_${TS}.tar.gz"
+                TPERM="$PERM_BACKUP_DIR/$FNAME"
+                TTMP="/tmp/$FNAME"
+                FLIST=""
+                for item in /etc/config/forkop /etc/forkop /etc/netbird /etc/config/netbird /usr/bin/forkop-mgr /etc/config/dhcp /etc/crontabs/root; do
+                    [ -e "$item" ] && FLIST="$FLIST $item"
+                done
+                tar -czf "$TPERM" $FLIST
+                cp -f "$TPERM" "$TTMP"
+                printf "${GREEN}Бэкап создан: $TPERM${NC}\n"
+                echo "Команда для скачивания на любой ПК (в текущую папку терминала):"
+                echo "scp -O root@192.168.11.1:$TTMP ."
+                ;;
+            2)
+                FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
+                if [ -z "$FOUND" ]; then printf "${YELLOW}Бэкапы не найдены!${NC}\n"; continue; fi
+                echo ""
+                echo "Доступные бэкапы:"
+                C=0
+                for f in $FOUND; do
+                    C=$((C + 1))
+                    eval "BF_$C=\"$f\""
+                    echo "  $C) $f ($(ls -lh "$f" | awk '{print $5}'))"
+                done
+                echo "  0) Отмена"
+                printf "Выберите номер [0-$C]: "
+                read -r SEL
+                [ "$SEL" = "0" ] || [ -z "$SEL" ] && continue
+                eval "CF=\"\$BF_$SEL\""
+                [ ! -f "$CF" ] && { echo "Неверный выбор"; continue; }
+
+                printf "Применить бэкап $CF? [y/N]: "
+                read -r CONF
+                case "$CONF" in y|Y|yes|YES) ;; *) continue ;; esac
+
+                echo "Проверка архива и создание аварийного снимка..."
+                tar -tzf "$CF" >/dev/null 2>&1 || { echo "Архив поврежден!"; continue; }
+                SNAP="/tmp/pre_restore_snap"
+                rm -rf "$SNAP"; mkdir -p "$SNAP"
+                [ -f /etc/config/forkop ] && cp -f /etc/config/forkop "$SNAP/"
+                [ -d /etc/netbird ] && cp -rf /etc/netbird "$SNAP/"
+
+                echo "Распаковка..."
+                if ! tar -xzf "$CF" -C /; then
+                    echo "Ошибка распаковки! Откат..."; [ -f "$SNAP/forkop" ] && cp -f "$SNAP/forkop" /etc/config/forkop; continue
+                fi
+                [ -f /usr/bin/forkop-mgr ] && chmod +x /usr/bin/forkop-mgr
+
+                echo "Перезапуск NetBird и Forkop..."
+                /etc/init.d/netbird restart || true
+                sleep 2
+                /etc/init.d/forkop restart || true
+                rm -rf "$SNAP"
+                printf "${GREEN}Система успешно восстановлена!${NC}\n"
+                ;;
+            3)
+                FOUND=$(find "$PERM_BACKUP_DIR" /tmp -maxdepth 1 -name "forkop_backup_*.tar.gz" 2>/dev/null | sort -u -r)
+                [ -z "$FOUND" ] && { printf "${YELLOW}Бэкапы не найдены!${NC}\n"; continue; }
+                C=0
+                for f in $FOUND; do C=$((C + 1)); eval "BF_$C=\"$f\""; echo "  $C) $f"; done
+                printf "Выберите номер [0-$C]: "; read -r SEL
+                [ "$SEL" = "0" ] || [ -z "$SEL" ] && continue
+                eval "CF=\"\$BF_$SEL\""
+                tar -ztvf "$CF"
+                ;;
+            *) break ;;
+        esac
+    done
+}
+
+# ==========================================
+# 4. МОДУЛЬ ДИАГНОСТИКИ И ПЕРЕЗАПУСКА
+# ==========================================
+menu_diag() {
+    echo ""
+    echo "=== Диагностика и мягкий перезапуск ==="
+    echo "1. Остановка Forkop (возврат прямого DNS)..."
+    /etc/init.d/forkop stop || true
+    echo "2. Перезапуск NetBird..."
+    /etc/init.d/netbird restart || true
+    echo "3. Ожидание интерфейса wt0..."
+    W=0
+    while [ $W -lt 15 ]; do
+        if ip a show wt0 2>/dev/null | grep -q "inet "; then
+            printf "${GREEN}wt0 активен!${NC}\n"; break
+        fi
+        sleep 1; W=$((W + 1))
+    done
+    echo "4. Чистый запуск Forkop..."
+    /etc/init.d/forkop restart || true
+    echo "5. Принудительное обновление списков..."
+    /usr/bin/forkop list_update_if_due || true
+    /usr/bin/forkop subscription_update_if_due || true
+    printf "${GREEN}Перезапуск завершен! Туннели и списки синхронизированы.${NC}\n"
+}
+
+# ==========================================
+# ГЛАВНЫЙ ЦИКЛ
+# ==========================================
+while true; do
+    echo ""
+    printf "${CYAN}========================================================${NC}\n"
+    printf "${CYAN}             FORKOP CONTROL CENTER                      ${NC}\n"
+    printf "${CYAN}========================================================${NC}\n"
+    printf "  Устройство : Xiaomi AX6000 (OpenWrt 25.12)\n"
+    printf "  Ядро       : Sing-Box \033[32m%s\033[0m\n" "$(get_singbox_ver)"
+    printf "  Forkop     : \033[32m%s\033[0m\n" "$(get_forkop_ver)"
+    printf "  Туннель    : NetBird %b\n" "$(get_netbird_status)"
+    printf "${CYAN}========================================================${NC}\n"
+    echo "  1) Управление ядром Sing-Box (Extended + UPX)"
+    echo "  2) Обновление самого Forkop (прямая установка APK)"
+    echo "  3) Резервное копирование и Восстановление"
+    echo "  4) Быстрый безопасный перезапуск всех служб"
+    echo "  0) Выход"
+    printf "${CYAN}========================================================${NC}\n"
+    printf "Выберите раздел [0-4]: "
+    read -r M_CH
+
+    case "$M_CH" in
+        1) menu_singbox ;;
+        2) menu_forkop ;;
+        3) menu_backup ;;
+        4) menu_diag ;;
+        0|"") echo "Выход."; exit 0 ;;
+        *) echo "Неверный ввод." ;;
+    esac
+done
