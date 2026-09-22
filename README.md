@@ -229,7 +229,7 @@ refresh lists / subscriptions
 Для чистой установки на новый роутер или обновления уже установленного скрипта выполните в SSH:
 
 ```sh
-(curl -skLf https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh 2>/dev/null || wget -q --no-check-certificate -O- https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh) | sh
+sh -c "$(curl -skLf https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh 2>/dev/null || wget -q --no-check-certificate -O- https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh)"
 ```
 
 Запуск:
@@ -678,7 +678,7 @@ The manager controls the service order to avoid DNS/NetBird startup loops.
 Connect to the router over SSH and run:
 
 ```sh
-(curl -skLf https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh 2>/dev/null || wget -q --no-check-certificate -O- https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh) | sh
+sh -c "$(curl -skLf https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh 2>/dev/null || wget -q --no-check-certificate -O- https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/install.sh)"
 ```
 
 Run:
