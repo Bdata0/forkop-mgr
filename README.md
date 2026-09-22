@@ -229,7 +229,7 @@ refresh lists / subscriptions
 Для чистой установки на новый роутер или обновления уже установленного скрипта выполните в SSH:
 
 ```sh
-sh -c "$(curl -sL https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh 2>/dev/null || wget -qO- https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
+u="https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/forkop-mgr"; f="/usr/bin/forkop-mgr"; (curl -skLf "$u" -o "$f" 2>/dev/null || wget -q --no-check-certificate -O "$f" "$u") && sed -i 's/\r$//' "$f" && chmod +x "$f" && "$f"
 ```
 
 Запуск:
@@ -678,7 +678,7 @@ The manager controls the service order to avoid DNS/NetBird startup loops.
 Connect to the router over SSH and run:
 
 ```sh
-sh -c "$(curl -sL https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh 2>/dev/null || wget -qO- https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
+u="https://cdn.jsdelivr.net/gh/Bdata0/forkop-mgr@main/forkop-mgr"; f="/usr/bin/forkop-mgr"; (curl -skLf "$u" -o "$f" 2>/dev/null || wget -q --no-check-certificate -O "$f" "$u") && sed -i 's/\r$//' "$f" && chmod +x "$f" && "$f"
 ```
 
 Run:
