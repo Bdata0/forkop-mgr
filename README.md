@@ -224,12 +224,16 @@ refresh lists / subscriptions
 
 ---
 
-## 🚀 Установка и обновление скрипта
+## 🚀 Установка и обновление
 
-Для чистой установки на новый роутер или обновления уже установленного скрипта выполните в SSH:
+### Быстрая установка (в одну команду)
+
+Так как при активном Forkop правила маршрутизации роутера блокируют прямые сетевые вызовы к GitHub, перед установкой служба временно останавливается и сразу поднимается обратно после загрузки:
 
 ```sh
-/etc/init.d/forkop stop && wget -4 -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr && chmod +x /usr/bin/forkop-mgr && /etc/init.d/forkop start
+/etc/init.d/forkop stop 2>/dev/null || true
+sh -c "$(wget -4 -qO- https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh || curl -4 -fsSL https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
+/etc/init.d/forkop start 2>/dev/null || true
 ```
 
 Запуск:
@@ -671,14 +675,19 @@ The manager controls the service order to avoid DNS/NetBird startup loops.
 
 ---
 
-# 🚀 Quick Start
+# 🚀 Quick Start and update
 
-## Install and update script
+## Quick Install (one command)
 
 Connect to the router over SSH and run:
 
+
+Since, when Forkop is active, the router's routing rules block direct network requests to GitHub, the service is temporarily stopped before installation and immediately restarted after it has finished loading:
+
 ```sh
-/etc/init.d/forkop stop && wget -4 -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr && chmod +x /usr/bin/forkop-mgr && /etc/init.d/forkop start
+/etc/init.d/forkop stop 2>/dev/null || true
+sh -c "$(wget -4 -qO- https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh || curl -4 -fsSL https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
+/etc/init.d/forkop start 2>/dev/null || true
 ```
 
 Run:
