@@ -24,7 +24,6 @@ GREEN='\033[32m'
 YELLOW='\033[33m'
 RED='\033[31m'
 CYAN='\033[36m'
-BOLD='\033[1m'
 NC='\033[0m'
 
 mkdir -p "$APP_DIR"
@@ -65,19 +64,19 @@ msg_err() {
 }
 
 step_start() {
-    printf "  ▶ %-42s " "$1"
+    printf "  ▶ %s ... " "$1"
 }
 
 step_done() {
-    printf "${GREEN}[OK]${NC}\n"
+    printf "${GREEN}OK${NC}\n"
 }
 
 step_done_info() {
-    printf "${GREEN}[OK: %s]${NC}\n" "$1"
+    printf "${GREEN}OK${NC} (%s)\n" "$1"
 }
 
 step_fail() {
-    printf "${RED}[FAIL]${NC}\n"
+    printf "${RED}FAIL${NC}\n"
 }
 
 toggle_lang() {
@@ -94,19 +93,17 @@ confirm_yes() {
     prompt="$1"
     default="${2:-n}"
 
-    if [ "$default" = "y" ]; then
-        disp="[Y/n]"
-    else
-        disp="[y/N]"
-    fi
+    [ "$default" = "y" ] && disp="[Y/n]" || disp="[y/N]"
 
     printf "%s %s: " "$prompt" "$disp"
-    read -r ans
+    read -r raw_ans
 
+    # Strip spaces, carriage returns, newlines
+    ans="$(printf '%s' "$raw_ans" | tr -d '[:space:]\r\n')"
     [ -z "$ans" ] && ans="$default"
 
     case "$ans" in
-        1|[yY]|[yY][eE][sS]|[дД]|[дД][аА])
+        1|[yY]|[yY][eE][sS]|[дД]|[дД][аА]|[уУ])
             return 0
             ;;
         *)
@@ -163,11 +160,11 @@ wait_wt0() {
     timeout="${1:-30}"
     i=0
 
-    printf "  ▶ %s " "$(t "Ожидание интерфейса wt0" "Waiting for wt0 interface")"
+    printf "  ▶ %s ... " "$(t "Ожидание интерфейса wt0" "Waiting for wt0 interface")"
 
     while [ "$i" -lt "$timeout" ]; do
         if wt0_up; then
-            printf "${GREEN}[OK: %ss]${NC}\n" "$i"
+            printf "${GREEN}OK${NC} (%ss)\n" "$i"
             return 0
         fi
         sleep 1
@@ -175,7 +172,7 @@ wait_wt0() {
         printf "."
     done
 
-    printf "${RED}[TIMEOUT]${NC}\n"
+    printf "${RED}TIMEOUT${NC}\n"
     return 1
 }
 
@@ -249,6 +246,7 @@ begin_github_session() {
 
     if forkop_running; then
         FORKOP_WAS_STOPPED=1
+        echo ""
         msg_warn "$(t \
             "Временная остановка Forkop для доступа к GitHub..." \
             "Temporarily stopping Forkop for GitHub access...")"
@@ -256,6 +254,7 @@ begin_github_session() {
             /etc/init.d/forkop stop >/dev/null 2>&1 || true
         fi
         sleep 2
+        echo ""
     fi
 
     GITHUB_SESSION_ACTIVE=1
@@ -268,6 +267,7 @@ end_github_session() {
 
     if [ "$FORKOP_WAS_STOPPED" = "1" ]; then
         FORKOP_WAS_STOPPED=0
+        echo ""
         msg_warn "$(t \
             "Возвращаем Forkop..." \
             "Restoring Forkop...")"
@@ -275,6 +275,7 @@ end_github_session() {
             msg_warn "$(t \
                 "Forkop не удалось автоматически запустить." \
                 "Forkop could not be started automatically.")"
+        echo ""
     fi
 }
 
@@ -283,7 +284,6 @@ end_github_session() {
 # Network Download Engine with Progress Indicators
 # ============================================================
 
-# Quiet download for small metadata/JSON files
 download_quiet() {
     url="$1"
     output="$2"
@@ -305,13 +305,11 @@ download_quiet() {
     return 1
 }
 
-# Download with visual progress bar for large files (binaries, APKs)
 download_with_progress() {
     url="$1"
     output="$2"
 
     if have_cmd curl; then
-        # curl -# displays a clean, single-line progress bar: [#####....] 100%
         curl -4 -fSL -# \
             -H "User-Agent: $GITHUB_UA" \
             --connect-timeout 15 \
@@ -358,6 +356,7 @@ github_download() {
         return 0
     fi
 
+    echo ""
     msg_warn "$(t \
         "Прямая загрузка не удалась. Подключение через зеркало обхода..." \
         "Direct download failed. Connecting via bypass mirror...")"
@@ -518,8 +517,10 @@ menu_singbox() {
     SB_TMP="$TMP_ROOT/singbox"
     mkdir -p "$SB_TMP/work" "$SB_TMP/backup"
 
+    begin_github_session
+
     echo ""
-    step_start "$(t "Запрос списка релизов на GitHub..." "Querying GitHub releases...")"
+    step_start "$(t "Запрос списка релизов на GitHub" "Querying GitHub releases")"
 
     releases="$SB_TMP/releases.json"
 
@@ -596,7 +597,7 @@ menu_singbox() {
     release="$SB_TMP/release.json"
 
     echo ""
-    step_start "$(t "Получение метаданных релиза..." "Fetching release metadata...")"
+    step_start "$(t "Получение метаданных релиза" "Fetching release metadata")"
 
     if ! github_get "https://api.github.com/repos/${SB_REPO}/releases/tags/${tag}" "$release"; then
         step_fail
@@ -641,7 +642,7 @@ menu_singbox() {
 
     echo ""
     echo "=== [2/6] $(t "Проверка и распаковка" "Verifying & unpacking") ==="
-    step_start "$(t "Проверка целостности архива..." "Checking archive integrity...")"
+    step_start "$(t "Проверка архива" "Checking archive")"
 
     if ! tar -tzf "$archive" >/dev/null 2>&1; then
         step_fail
@@ -655,7 +656,7 @@ menu_singbox() {
     rm -rf "$SB_TMP/work/extracted"
     mkdir -p "$SB_TMP/work/extracted"
 
-    step_start "$(t "Распаковка файлов..." "Extracting files...")"
+    step_start "$(t "Распаковка файлов" "Extracting files")"
     if ! tar -xzf "$archive" -C "$SB_TMP/work/extracted" 2>/dev/null; then
         step_fail
         msg_err "$(t "Ошибка распаковки." "Extraction failed.")"
@@ -676,7 +677,7 @@ menu_singbox() {
 
     echo ""
     echo "=== [3/6] $(t "Проверка бинарника" "Binary validation") ==="
-    step_start "$(t "Проверка версии бинарника..." "Checking binary version...")"
+    step_start "$(t "Проверка версии" "Checking version")"
 
     test_version="$("$bin_file" version 2>/dev/null | head -n 1 | awk '{print $3}')"
 
@@ -704,21 +705,21 @@ menu_singbox() {
 
     available_after_replace=$((free_kb + old_size_kb))
 
-    step_start "$(t "Проверка места в /overlay..." "Checking /overlay free space...")"
+    step_start "$(t "Место в /overlay" "/overlay free space")"
     if [ "$available_after_replace" -lt "$new_size_kb" ]; then
         step_fail
         msg_err "$(t \
             "Недостаточно места в /overlay." \
             "Not enough space in /overlay.")"
-        echo "Need:      ${new_size_kb} KB"
-        echo "Available: ${available_after_replace} KB"
+        echo "Need:      $((new_size_kb / 1024)) MB"
+        echo "Available: $((available_after_replace / 1024)) MB"
         return
     fi
-    step_done_info "Need: ${new_size_kb}KB, Avail: ${available_after_replace}KB"
+    step_done_info "нужно $((new_size_kb / 1024)) MB, доступно $((available_after_replace / 1024)) MB"
 
     echo ""
     echo "=== [5/6] $(t "Создание RAM snapshot" "Creating RAM snapshot") ==="
-    step_start "$(t "Резервная копия текущего ядра..." "Backing up current kernel...")"
+    step_start "$(t "Резервная копия ядра" "Kernel backup")"
 
     old_running=0
     if forkop_running; then
@@ -737,9 +738,9 @@ menu_singbox() {
     step_done
 
     echo ""
-    echo "=== [6/6] $(t "Установка и проверка запуска" "Installing and checking startup") ==="
+    echo "=== [6/6] $(t "Установка и запуск" "Installation & startup") ==="
 
-    step_start "$(t "Остановка старого процесса..." "Stopping old process...")"
+    step_start "$(t "Остановка старого процесса" "Stopping old process")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
@@ -747,7 +748,7 @@ menu_singbox() {
     sleep 1
     step_done
 
-    step_start "$(t "Замена бинарного файла..." "Replacing binary file...")"
+    step_start "$(t "Замена бинарника" "Replacing binary")"
     if ! cp -f "$bin_file" /usr/bin/sing-box; then
         step_fail
         singbox_rollback "$current" "$old_running"
@@ -760,7 +761,7 @@ menu_singbox() {
     clear_luci_cache
 
     if [ "$old_running" = "1" ]; then
-        step_start "$(t "Запуск службы Forkop..." "Starting Forkop service...")"
+        step_start "$(t "Запуск службы Forkop" "Starting Forkop service")"
         if ! start_forkop_safe >/dev/null 2>&1; then
             step_fail
             msg_err "$(t \
@@ -771,13 +772,12 @@ menu_singbox() {
         fi
         step_done
 
-        # Animated check loop for sing-box process
-        printf "  ▶ %s " "$(t "Ожидание запуска sing-box" "Waiting for sing-box startup")"
+        printf "  ▶ %s ... " "$(t "Ожидание запуска sing-box" "Waiting for sing-box startup")"
         sb_started=0
         for i in $(seq 1 10); do
             if pidof sing-box >/dev/null 2>&1 || pgrep -f sing-box >/dev/null 2>&1; then
                 sb_started=1
-                printf "${GREEN}[OK: %ss]${NC}\n" "$i"
+                printf "${GREEN}OK${NC} (%ss)\n" "$i"
                 break
             fi
             sleep 1
@@ -785,7 +785,7 @@ menu_singbox() {
         done
 
         if [ "$sb_started" != "1" ]; then
-            printf "${RED}[FAIL]${NC}\n"
+            printf "${RED}FAIL${NC}\n"
             msg_err "$(t \
                 "Sing-Box не запустился после обновления." \
                 "Sing-Box did not start after update.")"
@@ -815,8 +815,10 @@ menu_forkop() {
     FK_TMP="$TMP_ROOT/forkop"
     mkdir -p "$FK_TMP"
 
+    begin_github_session
+
     echo ""
-    step_start "$(t "Запрос последнего релиза Forkop..." "Querying latest Forkop release...")"
+    step_start "$(t "Запрос последнего релиза Forkop" "Querying latest Forkop release")"
 
     latest="$FK_TMP/latest.json"
 
@@ -869,7 +871,7 @@ menu_forkop() {
     release="$FK_TMP/release.json"
 
     echo ""
-    step_start "$(t "Получение метаданных релиза..." "Fetching release metadata...")"
+    step_start "$(t "Получение метаданных релиза" "Fetching release metadata")"
 
     if ! github_get "https://api.github.com/repos/${FK_REPO}/releases/tags/${tag}" "$release"; then
         step_fail
@@ -897,7 +899,7 @@ menu_forkop() {
 
     echo ""
     echo "=== [1/4] $(t "Сохранение конфигурации" "Backing up configuration") ==="
-    step_start "$(t "Резервная копия forkop.config..." "Backing up forkop.config...")"
+    step_start "$(t "Резервная копия forkop.config" "Backing up forkop.config")"
 
     if [ -f /etc/config/forkop ]; then
         cp -f /etc/config/forkop "$FK_TMP/forkop.config" || {
@@ -935,13 +937,13 @@ menu_forkop() {
 
     echo ""
     echo "=== [3/4] $(t "Установка через apk" "Installing with apk") ==="
-    step_start "$(t "Остановка службы..." "Stopping service...")"
+    step_start "$(t "Остановка службы" "Stopping service")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
     step_done
 
-    step_start "$(t "Установка пакетов apk..." "Installing apk packages...")"
+    step_start "$(t "Установка пакетов apk" "Installing apk packages")"
     if ! apk add --allow-untrusted "$core_apk" "$luci_apk" >/dev/null 2>&1; then
         step_fail
         msg_err "$(t \
@@ -966,7 +968,7 @@ menu_forkop() {
 
     clear_luci_cache
 
-    step_start "$(t "Безопасный запуск Forkop..." "Safe starting Forkop...")"
+    step_start "$(t "Безопасный запуск Forkop" "Safe starting Forkop")"
     if ! start_forkop_safe >/dev/null 2>&1; then
         step_fail
         msg_err "$(t \
@@ -1012,7 +1014,7 @@ backup_create() {
     done
 
     echo ""
-    step_start "$(t "Создание архива конфигураций..." "Creating config archive...")"
+    step_start "$(t "Создание архива конфигураций" "Creating config archive")"
 
     if ! tar -czf "$permanent" -T "$list" 2>/dev/null; then
         step_fail
@@ -1087,7 +1089,8 @@ backup_restore() {
         return
     fi
 
-    step_start "$(t "Проверка целостности архива..." "Checking archive integrity...")"
+    echo ""
+    step_start "$(t "Проверка архива" "Checking archive")"
     if ! tar -tzf "$selected" >/dev/null 2>&1; then
         step_fail
         msg_err "$(t "Архив повреждён." "Archive is corrupt.")"
@@ -1117,7 +1120,7 @@ backup_restore() {
         fi
     done
 
-    step_start "$(t "Создание аварийного snapshot..." "Creating rollback snapshot...")"
+    step_start "$(t "Создание аварийного snapshot" "Creating rollback snapshot")"
     if ! tar -czf "$pre_restore" -T "$current_list" 2>/dev/null; then
         step_fail
         msg_err "$(t \
@@ -1127,13 +1130,13 @@ backup_restore() {
     fi
     step_done
 
-    step_start "$(t "Остановка текущей службы..." "Stopping current service...")"
+    step_start "$(t "Остановка текущей службы" "Stopping current service")"
     if [ -x /etc/init.d/forkop ]; then
         /etc/init.d/forkop stop >/dev/null 2>&1 || true
     fi
     step_done
 
-    step_start "$(t "Восстановление файлов из архива..." "Restoring files from archive...")"
+    step_start "$(t "Восстановление файлов из архива" "Restoring files from archive")"
     if ! tar -xzf "$selected" -C / 2>/dev/null; then
         step_fail
         msg_err "$(t \
@@ -1147,14 +1150,12 @@ backup_restore() {
     chmod +x /usr/bin/forkop-mgr 2>/dev/null || true
     step_done
 
-    step_start "$(t "Проверка туннеля NetBird..." "Checking NetBird tunnel...")"
     if ! wt0_up; then
         if [ -x /etc/init.d/netbird ]; then
             /etc/init.d/netbird restart >/dev/null 2>&1 || true
         fi
 
         if ! wait_wt0 30; then
-            step_fail
             msg_err "$(t \
                 "NetBird не поднялся. Выполняется rollback." \
                 "NetBird did not come up. Performing rollback.")"
@@ -1164,9 +1165,8 @@ backup_restore() {
             return
         fi
     fi
-    step_done
 
-    step_start "$(t "Запуск восстановленной службы..." "Starting restored service...")"
+    step_start "$(t "Запуск восстановленной службы" "Starting restored service")"
     if ! start_forkop_safe >/dev/null 2>&1; then
         step_fail
         msg_err "$(t \
@@ -1255,21 +1255,20 @@ menu_diag() {
     echo "  $(t "Диагностика и безопасный перезапуск" "Diagnostics & Safe Restart")"
     echo "=================================================="
 
-    step_start "1. $(t "Остановка Forkop..." "Stopping Forkop...")"
+    step_start "1. $(t "Остановка Forkop" "Stopping Forkop")"
     /etc/init.d/forkop stop >/dev/null 2>&1 || true
     step_done
 
-    step_start "2. $(t "Перезапуск NetBird..." "Restarting NetBird...")"
+    step_start "2. $(t "Перезапуск NetBird" "Restarting NetBird")"
     /etc/init.d/netbird restart >/dev/null 2>&1 || true
     step_done
 
-    echo "3. $(t "Ожидание туннеля wt0..." "Waiting for wt0 tunnel...")"
     if ! wait_wt0 30; then
         msg_err "$(t "wt0 не поднялся. Forkop не будет запущен." "wt0 did not come up. Forkop will not be started.")"
         return
     fi
 
-    step_start "4. $(t "Запуск Forkop..." "Starting Forkop...")"
+    step_start "4. $(t "Запуск Forkop" "Starting Forkop")"
     if ! start_forkop_safe >/dev/null 2>&1; then
         step_fail
         msg_err "$(t "Forkop не удалось запустить." "Forkop failed to start.")"
@@ -1277,7 +1276,7 @@ menu_diag() {
     fi
     step_done
 
-    step_start "5. $(t "Обновление списков и подписок..." "Refreshing lists and subscriptions...")"
+    step_start "5. $(t "Обновление списков и подписок" "Refreshing lists & subscriptions")"
     if [ -x /usr/bin/forkop ]; then
         /usr/bin/forkop list_update_if_due >/dev/null 2>&1 || true
         /usr/bin/forkop subscription_update_if_due >/dev/null 2>&1 || true
@@ -1377,6 +1376,7 @@ while true; do
             toggle_lang
             ;;
         0|"")
+            echo ""
             echo "$(t "Выход." "Exit.")"
             exit 0
             ;;
