@@ -160,7 +160,7 @@ wait_wt0() {
     timeout="${1:-30}"
     i=0
 
-    printf "  ▶ %s ... " "$(t "3. Ожидание интерфейса wt0" "Waiting for wt0 interface")"
+    printf "  ▶ %s ... " "$(t "Ожидание интерфейса wt0" "Waiting for wt0 interface")"
 
     while [ "$i" -lt "$timeout" ]; do
         if wt0_up; then
@@ -178,7 +178,7 @@ wait_wt0() {
 
 
 # ============================================================
-# Forkop & NetBird Lifecycle
+# Forkop & Network Lifecycle
 # ============================================================
 
 start_forkop_safe() {
@@ -202,6 +202,21 @@ start_forkop_safe() {
                 "Failed to start Forkop.")"
             return 1
         }
+    fi
+
+    # Flush DNS resolver cache so client devices don't keep stale Fake-IPs
+    if [ -x /etc/init.d/dnsmasq ]; then
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+    fi
+
+    # Flush conntrack sessions if tool is installed
+    if have_cmd conntrack; then
+        conntrack -F >/dev/null 2>&1 || true
+    fi
+
+    # Warm up proxy nodes & Fake-IP immediately in background
+    if [ -x /usr/bin/forkop ]; then
+        (/usr/bin/forkop global_check >/dev/null 2>&1 || true) &
     fi
 
     sleep 2
@@ -914,7 +929,7 @@ menu_forkop() {
     step_done
 
     echo ""
-    echo "=== [2/4] $(t "Скачивание пакетов" "Downloading packages") ==="
+    echo "=== [2/4] Скачивание пакетов ===="
 
     core_apk="$FK_TMP/$core_name"
     luci_apk="$FK_TMP/$luci_name"
@@ -1246,7 +1261,7 @@ backup_menu() {
 
 
 # ============================================================
-# Diagnostics
+# Diagnostics & Global Check
 # ============================================================
 
 menu_diag() {
@@ -1276,7 +1291,25 @@ menu_diag() {
     fi
     step_done
 
-    step_start "5. $(t "Обновление списков и подписок" "Refreshing lists & subscriptions")"
+    step_start "5. $(t "Перезапуск DNS (dnsmasq)" "Restarting DNS (dnsmasq)")"
+    if [ -x /etc/init.d/dnsmasq ]; then
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+    fi
+    step_done
+
+    step_start "6. $(t "Сброс соединений (conntrack)" "Flushing connections (conntrack)")"
+    if have_cmd conntrack; then
+        conntrack -F >/dev/null 2>&1 || true
+    fi
+    step_done
+
+    step_start "7. $(t "Прогрев нод и Fake-IP (global_check)" "Warming up nodes & Fake-IP (global_check)")"
+    if [ -x /usr/bin/forkop ]; then
+        /usr/bin/forkop global_check >/dev/null 2>&1 || true
+    fi
+    step_done
+
+    step_start "8. $(t "Обновление списков и подписок" "Refreshing lists & subscriptions")"
     if [ -x /usr/bin/forkop ]; then
         /usr/bin/forkop list_update_if_due >/dev/null 2>&1 || true
         /usr/bin/forkop subscription_update_if_due >/dev/null 2>&1 || true
@@ -1286,7 +1319,25 @@ menu_diag() {
     clear_luci_cache
 
     echo ""
-    msg_ok "$(t "Безопасный перезапуск завершён." "Safe restart completed.")"
+    msg_ok "$(t "Безопасный перезапуск завершён. Интернет на клиентах активен." "Safe restart completed. Client internet is active.")"
+}
+
+menu_global_check() {
+    echo ""
+    echo "=================================================="
+    echo "  $(t "Глобальная проверка системы (Global Check)" "Forkop Global Check")"
+    echo "=================================================="
+    echo ""
+
+    if [ -x /usr/bin/forkop ]; then
+        /usr/bin/forkop global_check
+    else
+        msg_err "$(t "Утилита /usr/bin/forkop не найдена." "/usr/bin/forkop utility not found.")"
+    fi
+
+    echo ""
+    printf "%s" "$(t "Нажмите Enter для продолжения..." "Press Enter to continue...")"
+    read -r _
 }
 
 
@@ -1344,6 +1395,10 @@ show_header() {
         "Быстрый безопасный перезапуск" \
         "Quick safe restart")"
 
+    echo "  5) $(t \
+        "Комплексная диагностика (Global Check)" \
+        "System diagnostics (Global Check)")"
+
     echo "  L) $(t \
         "Сменить язык / Switch to English" \
         "Change language / Переключить на русский")"
@@ -1356,7 +1411,7 @@ show_header() {
 while true; do
     show_header
 
-    printf "%s: " "$(t "Выберите раздел [0-4, L]" "Select a section [0-4, L]")"
+    printf "%s: " "$(t "Выберите раздел [0-5, L]" "Select a section [0-5, L]")"
     read -r choice
 
     case "$choice" in
@@ -1371,6 +1426,9 @@ while true; do
             ;;
         4)
             menu_diag
+            ;;
+        5)
+            menu_global_check
             ;;
         l|L|д|Д)
             toggle_lang
