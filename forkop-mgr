@@ -160,7 +160,7 @@ wait_wt0() {
     timeout="${1:-30}"
     i=0
 
-    printf "  ▶ %s ... " "$(t "Ожидание интерфейса wt0" "Waiting for wt0 interface")"
+    printf "  ▶ %s ... " "$(t "3. Ожидание интерфейса wt0" "Waiting for wt0 interface")"
 
     while [ "$i" -lt "$timeout" ]; do
         if wt0_up; then
