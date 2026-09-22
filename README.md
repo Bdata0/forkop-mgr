@@ -229,10 +229,7 @@ refresh lists / subscriptions
 Для чистой установки на новый роутер или обновления уже установленного скрипта выполните в SSH:
 
 ```sh
-u="https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr"; \
-(curl -sLf -x http://127.0.0.1:4534 "$u" -o /usr/bin/forkop-mgr || \
- curl -sLf "$u" -o /usr/bin/forkop-mgr || \
- wget -qO /usr/bin/forkop-mgr "$u") && chmod +x /usr/bin/forkop-mgr
+sh -c "$(curl -sL https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh 2>/dev/null || wget -qO- https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
 ```
 
 Запуск:
@@ -681,10 +678,7 @@ The manager controls the service order to avoid DNS/NetBird startup loops.
 Connect to the router over SSH and run:
 
 ```sh
-u="https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr"; \
-(curl -sLf -x http://127.0.0.1:4534 "$u" -o /usr/bin/forkop-mgr || \
- curl -sLf "$u" -o /usr/bin/forkop-mgr || \
- wget -qO /usr/bin/forkop-mgr "$u") && chmod +x /usr/bin/forkop-mgr
+sh -c "$(curl -sL https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh 2>/dev/null || wget -qO- https://ghproxy.net/https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/install.sh)"
 ```
 
 Run:
