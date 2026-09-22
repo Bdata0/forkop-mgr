@@ -38,21 +38,12 @@ else
     echo -n "$APP_LANG" > "$LANG_FILE"
 fi
 
-# Функция перевода
 t() {
-    if [ "$APP_LANG" = "en" ]; then
-        echo "$2"
-    else
-        echo "$1"
-    fi
+    [ "$APP_LANG" = "en" ] && echo "$2" || echo "$1"
 }
 
 toggle_lang() {
-    if [ "$APP_LANG" = "en" ]; then
-        APP_LANG="ru"
-    else
-        APP_LANG="en"
-    fi
+    [ "$APP_LANG" = "en" ] && APP_LANG="ru" || APP_LANG="en"
     echo -n "$APP_LANG" > "$LANG_FILE"
 }
 
@@ -70,6 +61,33 @@ get_netbird_status() {
     else
         printf "${RED}DOWN${NC}"
     fi
+}
+
+# ==========================================
+# УМНЫЙ ЗАГРУЗЧИК С ЗАЩИТОЙ ОТ FAKE-IP
+# ==========================================
+safe_curl() {
+    # 1. Если доступен локальный прокси Forkop — всегда идем через него
+    if nc -z 127.0.0.1 4534 2>/dev/null; then
+        curl -sL -x "$PROXY" --connect-timeout 15 "$@"
+        return 0
+    fi
+
+    # 2. Если прокси недоступен, проверяем, не попадаем ли мы в Fake-IP
+    TEST_IP=$(nslookup raw.githubusercontent.com 2>/dev/null | grep 'Address:' | tail -n1 | awk '{print $2}')
+    case "$TEST_IP" in
+        198.18.*)
+            # Мы в ловушке Fake-IP без запущенного прокси! Запрашиваем через реальный DNS 1.1.1.1
+            REAL_IP=$(nslookup raw.githubusercontent.com 1.1.1.1 2>/dev/null | grep 'Address:' | grep -v '1.1.1.1' | tail -n1 | awk '{print $2}')
+            if [ -n "$REAL_IP" ]; then
+                curl -sL --resolve "raw.githubusercontent.com:443:$REAL_IP" --connect-timeout 15 "$@"
+                return 0
+            fi
+            ;;
+    esac
+
+    # 3. Стандартный прямой запрос
+    curl -sL --connect-timeout 15 "$@"
 }
 
 # ==========================================
@@ -100,10 +118,9 @@ sb_rollback() {
 menu_singbox() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
-    [ -n "$PROXY" ] && export http_proxy="$PROXY" https_proxy="$PROXY" || true
 
-    RELEASES=$(curl -s --connect-timeout 10 "https://api.github.com/repos/${SB_REPO}/releases?per_page=5" \
-        | grep '"tag_name":' | head -n 3 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+    API_DATA=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${SB_REPO}/releases?per_page=5" || true)
+    RELEASES=$(echo "$API_DATA" | grep '"tag_name":' | head -n 3 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
 
     if [ -z "$RELEASES" ]; then
         printf "${RED}%s${NC}\n" "$(t "Ошибка: не удалось связаться с GitHub. Проверьте интернет или NetBird." "Error: Failed to reach GitHub. Check internet or NetBird.")"
@@ -162,7 +179,7 @@ menu_singbox() {
 
     echo "=== [2/5] $(t "Скачивание UPX-сжатого архива" "Downloading UPX-compressed archive") $T_TAG ==="
     URL="https://github.com/${SB_REPO}/releases/download/${T_TAG}/sing-box-${V_CLEAN}-${ARCH}-compressed.tar.gz"
-    curl -L --fail --connect-timeout 25 -o archive.tar.gz "$URL"
+    safe_curl -o archive.tar.gz "$URL"
 
     tar -xzf archive.tar.gz
     BIN_FILE=$(find "$TMP_DIR" -type f -name "sing-box" | head -n 1)
@@ -185,7 +202,6 @@ menu_singbox() {
     [ -f "$APK_DB" ] && cp -f "$APK_DB" "$BACKUP_DIR/installed.bak"
 
     echo "=== [5/5] $(t "Установка и синхронизация кэша" "Installing & syncing cache") ==="
-    unset http_proxy https_proxy
     /etc/init.d/forkop stop || true
     killall -9 sing-box 2>/dev/null || true
     sleep 1
@@ -221,9 +237,8 @@ menu_singbox() {
 menu_forkop() {
     echo ""
     echo "$(t "Подключение к GitHub..." "Connecting to GitHub...")"
-    [ -n "$PROXY" ] && export http_proxy="$PROXY" https_proxy="$PROXY" || true
 
-    API_RESP=$(curl -s --connect-timeout 10 -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${FK_REPO}/releases/latest" 2>/dev/null || true)
+    API_RESP=$(safe_curl -H "User-Agent: OpenWrt-Forkop-Mgr" "https://api.github.com/repos/${FK_REPO}/releases/latest" || true)
     FK_TAG=$(echo "$API_RESP" | grep '"tag_name":' | head -n 1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
     [ -z "$FK_TAG" ] && FK_TAG="1.0.5"
     FK_LATEST=$(echo "$FK_TAG" | sed 's/^v//')
@@ -262,12 +277,11 @@ menu_forkop() {
     URL_LUCI="https://github.com/${FK_REPO}/releases/download/${FK_TAG}/luci-app-forkop_${FK_LATEST}.apk"
 
     echo "Downloading core: $URL_CORE"
-    curl -L --fail --connect-timeout 20 -o "$FK_TMP/forkop.apk" "$URL_CORE"
+    safe_curl -o "$FK_TMP/forkop.apk" "$URL_CORE"
     echo "Downloading LuCI: $URL_LUCI"
-    curl -L --fail --connect-timeout 20 -o "$FK_TMP/luci-app-forkop.apk" "$URL_LUCI"
+    safe_curl -o "$FK_TMP/luci-app-forkop.apk" "$URL_LUCI"
 
     echo "=== [3/4] $(t "Установка пакетов через apk" "Installing packages via apk") ==="
-    unset http_proxy https_proxy
     /etc/init.d/forkop stop || true
 
     sed -i '/sing-box-extended/d' /etc/apk/world 2>/dev/null || true
@@ -397,9 +411,9 @@ menu_diag() {
     echo "=== $(t "Диагностика и мягкий перезапуск" "Diagnostics & Soft Restart") ==="
     echo "1. $(t "Остановка Forkop (возврат прямого DNS)..." "Stopping Forkop (restoring direct DNS)...")"
     /etc/init.d/forkop stop || true
-    echo "2. $(t "Перезапуск NetBird..." "Restarting NetBird...")"
+    echo "2. Перезапуск NetBird..."
     /etc/init.d/netbird restart || true
-    echo "3. $(t "Ожидание интерфейса wt0..." "Waiting for wt0 interface...")"
+    echo "3. Ожидание интерфейса wt0..."
     W=0
     while [ $W -lt 15 ]; do
         if ip a show wt0 2>/dev/null | grep -q "inet "; then
@@ -407,9 +421,9 @@ menu_diag() {
         fi
         sleep 1; W=$((W + 1))
     done
-    echo "4. $(t "Чистый запуск Forkop..." "Clean start of Forkop...")"
+    echo "4. Чистый запуск Forkop..."
     /etc/init.d/forkop restart || true
-    echo "5. $(t "Принудительное обновление списков..." "Forcing lists update...")"
+    echo "5. Принудительное обновление списков..."
     /usr/bin/forkop list_update_if_due || true
     /usr/bin/forkop subscription_update_if_due || true
     printf "${GREEN}%s${NC}\n" "$(t "Перезапуск завершен! Туннели и списки синхронизированы." "Restart complete! Tunnels & lists synced.")"
