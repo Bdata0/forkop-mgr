@@ -1,234 +1,166 @@
 # 🎛️ Forkop Control Center (`forkop-mgr`)
 
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.x-blue?logo=openwrt)](https://openwrt.org/)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-24.x%20%7C%2025.x-blue?logo=openwrt)](https://openwrt.org/)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-lightgrey?logo=gnu-bash)](https://www.gnu.org/software/bash/)
 [![Architecture](https://img.shields.io/badge/Architecture-ARM64%20%2F%20AArch64-orange)](https://openwrt.org/docs/techref/targets)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Универсальный инструмент автоматизации, обслуживания и аварийного восстановления для связки Forkop + Sing-Box Extended + NetBird на роутерах с OpenWrt 25.x.**
+**Универсальный инструмент автоматизации, безопасного обслуживания и восстановления связки Forkop + Sing-Box Extended + NetBird на роутерах с OpenWrt 24.x / 25.x.**
 
-Специально оптимизирован для устройств с компактным разделом `/overlay`, включая **Xiaomi Redmi Router AX6000** со штатной разметкой.
+Специально оптимизирован для устройств с компактным разделом `/overlay`, включая **Xiaomi Redmi Router AX6000** со стандартной разметкой (stock layout).
 
-**Languages:** 🇷🇺 Русский · [🇬🇧 English](#-english)
+[🇷🇺 RU](#-ru) · [🌐 EN](#-en)
 
 ---
 
-# 🇷🇺 Русский
+# 🇷🇺 RU
 
 ## 📌 О проекте
 
-`forkop-mgr` — консольный менеджер для безопасного обслуживания роутера, на котором одновременно используются:
+`forkop-mgr` — интерактивный консольный центр управления для безопасного обслуживания сетевого стека роутера:
 
-- **Forkop** — управление прокси/сетевыми функциями;
-- **Sing-Box Extended** — сетевое ядро;
-- **NetBird** — mesh/VPN-туннель;
-- **DoH** — DNS over HTTPS;
-- **OpenWrt 25.x** с пакетным менеджером `apk`.
+- **Forkop** — маршрутизация, списки обхода блокировок и TProxy;
+- **Sing-Box Extended** — производительное сетевое ядро с современными протоколами;
+- **NetBird** — P2P mesh-туннель (`wt0`);
+- **OpenWrt 24.x / 25.x** с пакетным менеджером `apk`.
 
-Основная задача проекта — сделать операции обновления, резервного копирования и восстановления максимально безопасными даже на роутерах с очень ограниченным свободным местом во flash-памяти.
+Главная цель утилиты — свести к минимуму риск повреждения системы при обновлениях, автоматизировать решение сетевых циклов (DNS-петель) и экономить ресурс flash-памяти за счёт работы в оперативной памяти (`/tmp`).
 
 ---
 
-## 🌟 Основные возможности
+## 🌟 Ключевые возможности
 
 ### ⚡ Управление ядром Sing-Box Extended
-
-- Интерактивный выбор одной из **3 последних версий** из GitHub.
-- Скачивание официальных **UPX-сжатых** сборок.
-- Экономия места во flash-памяти: примерно **21 МБ вместо ~100 МБ**.
-- Умный расчёт свободного места с учётом замены текущего файла.
-- Все операции распаковки и проверки выполняются в **ОЗУ (`/tmp`)**.
-- Создание временного снимка текущего ядра перед заменой.
-- **Автоматический rollback** при ошибках.
-- Проверка нового ядра через `sing-box check`.
-- Синхронизация версии с базой пакетов `apk` и кэшем Forkop.
-- Актуальное отображение версии в LuCI.
+- Интерактивный выбор одной из **3 последних версий** из GitHub API.
+- Загрузка официальных **UPX-сжатых** сборок для ARM64 (`compressed.tar.gz`).
+- Экономия flash-памяти: около **20 МБ вместо ~100 МБ**.
+- **Предварительная валидация:** проверка целостности архива (`tar -tzf`), запуск тестового бинарника и сверка версии до внесения изменений в систему.
+- **Расчёт дискового пространства:** проверка доступного места в `/overlay` с учётом размера заменяемого ядра.
+- **Автоматический откат (Rollback):** сохранение снимка старого бинарника в RAM. Если новое ядро не запускается в течение 10 секунд, менеджер мгновенно восстанавливает предыдущую рабочую версию.
 
 ### 🔄 Безопасное обновление Forkop
-
-- Прямое скачивание и установка:
-  - `forkop.apk`;
-  - `luci-app-forkop.apk`.
-- Обход ограничения официального установщика Forkop в **15 МБ свободного места**.
-- Пакеты занимают около **500 КБ**.
-- Автоматическая разблокировка базы `/etc/apk/world`.
-- Сохранение пользовательской конфигурации `/etc/config/forkop`.
-- Установка напрямую через `apk add`.
+- Прямое скачивание пакетов `forkop_<version>.apk` и `luci-app-forkop_<version>.apk` напрямую из официальных релизов.
+- Корректная установка через `apk add --allow-untrusted` без костылей и без ручного вмешательства в системные базы `/etc/apk/world` и `/lib/apk/db/installed`.
+- Сохранение и автоматическое восстановление пользовательской конфигурации `/etc/config/forkop`.
 
 ### 🛡️ Защита NetBird (`wt0`) и предотвращение DNS-петель
-
-Скрипт предотвращает взаимную блокировку компонентов:
-
-> DoH зависит от NetBird, а NetBird не может подключиться к серверу управления без DNS.
-
-Для этого:
-
+Скрипт предотвращает взаимную блокировку сетевых компонентов:
 1. Forkop временно останавливается.
-2. Запускается NetBird.
-3. Скрипт ожидает появления `wt0`.
-4. Проверяется получение IP-адреса.
-5. Только после этого запускается Forkop.
+2. Перезапускается NetBird.
+3. Скрипт ожидает появления интерфейса `wt0` и назначения IPv4-адреса.
+4. Только после подтверждения готовности туннеля запускается Forkop.
 
-### 📦 Полное резервное копирование и восстановление
+### 🌐 Обход цензуры и защита от блокировок GitHub
+- **Единая сессия:** при работе с GitHub Forkop останавливается ровно один раз перед серией загрузок и запускается в самом конце.
+- **Резервные зеркала (Mirror Fallback):** если прямое скачивание блокируется ТСПУ/провайдером, скрипт автоматически переключается на прокси-зеркала (`ghproxy.net`, `gh-proxy.com`).
 
-Бэкап может включать:
+### 📦 Резервное копирование и восстановление
+- Сохранение всех ключевых файлов и каталогов:
+  `/etc/config/forkop`, `/etc/forkop`, `/etc/netbird`, `/etc/config/netbird`, `/etc/config/dhcp`, `/etc/crontabs/root`, `/usr/bin/forkop-mgr`.
+- Постоянное хранение в `/etc/forkop_backups/` и удобная копия в `/tmp/` для скачивания на ПК.
+- Создание аварийного snapshot перед восстановлением и автоматический откат при неудаче.
 
-- конфигурацию Forkop;
-- сертификаты;
-- ключи и конфигурацию NetBird;
-- DoH;
-- DHCP;
-- Cron;
-- пользовательские скрипты и настройки.
-
-Бэкапы сохраняются:
-
-- в `/etc/forkop_backups/` — постоянное хранилище;
-- в `/tmp/` — для удобного скачивания на компьютер.
-
-Перед восстановлением создаётся снимок текущего состояния. При ошибке выполняется **автоматический rollback**.
-
-### 🩺 Диагностика и безопасный перезапуск
-
-- Мягкий перезапуск служб в правильном порядке.
-- Предотвращение зависания сетевого стека.
-- Перезапуск NetBird с ожиданием `wt0`.
-- Принудительное обновление списков доменов и подписок.
-- Восстановление после временного разрыва туннеля или DNS-петли.
+### 🩺 Комплексный перезапуск и диагностика
+- **Быстрый безопасный перезапуск:** перезапуск NetBird → ожидание `wt0` → старт Forkop → рестарт `dnsmasq` → сброс NAT-таблиц `conntrack -F` → прогрев Fake-IP и нод → обновление подписок.
+- **Global Check:** прямой вызов встроенного теста `/usr/bin/forkop global_check` прямо из консоли с выводом задержек нод и правил nftables.
 
 ---
 
-# 🏗️ Архитектура
+## 🏗️ Архитектура сетевого стека
 
-Основная идея `forkop-mgr` — не просто запускать команды, а контролировать зависимости между сервисами.
+```mermaid
+flowchart TD
+    Router["OpenWrt 24.x / 25.x (Router)"] --> Mgr["forkop-mgr (Control Center)"]
 
-```text
-                         ┌──────────────────────┐
-                         │     OpenWrt 25.x     │
-                         │      Router          │
-                         └──────────┬───────────┘
-                                    │
-                           ┌────────▼────────┐
-                           │   forkop-mgr    │
-                           │ Control Center  │
-                           └────────┬────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              │                     │                     │
-              ▼                     ▼                     ▼
-       ┌─────────────┐        ┌─────────────┐      ┌─────────────┐
-       │    Forkop   │──────▶ │  DoH DNS    │     │  Sing-Box   │
-       └──────┬──────┘        └─────┬───────┘      │  Extended   │
-              │                     │              └─────────────┘
-              │                     │
-              │              DNS dependency
-              │                     │
-              │                     ▼
-              │               ┌─────────────┐
-              └─────────────▶│   NetBird   │
-                              │     wt0     │
-                              └──────┬──────┘
-                                     │
-                                     ▼
-                             NetBird Management
+    subgraph Stack ["Сетевой стек и зависимости"]
+        Forkop["Forkop (TProxy / NFT)"]
+        SingBox["Sing-Box Extended (UPX)"]
+        NetBird["NetBird (wt0 VPN)"]
+        FakeIP["127.0.0.42:53 (Fake-IP)"]
+        Mgmt["Management Server"]
+
+        Forkop -->|Перехват трафика| SingBox
+        SingBox -->|DNS-запросы| FakeIP
+        SingBox -->|Выход в туннель| NetBird
+        NetBird -.->|Требует DNS для связи| Mgmt
+    end
+
+    Mgr --> Forkop
+    Mgr --> SingBox
+    Mgr --> NetBird
 ```
 
-### Почему важен порядок запуска?
+### Разрыв циклической DNS-зависимости
 
-При определённой конфигурации может возникнуть цикл:
+При перезапуске может возникнуть тупиковая ситуация: NetBird не может отрезолвить адрес своего координатора без DNS, а DNS перехвачен ядром, которое ждёт туннель NetBird. `forkop-mgr` разрешает этот цикл строгой последовательностью:
 
-```text
-        ┌─────────────┐
-        │    Forkop   │
-        └──────┬──────┘
-               │
-               ▼
-            DoH DNS
-               │
-               ▼
-          NetBird wt0
-               │
-               ▼
-       Management Server
-               │
-               │ требует DNS
-               └───────────────┐
-                               ▼
-                            DoH DNS
-```
-
-Если `wt0` ещё не поднят, NetBird может не разрешить адрес management-сервера.
-
-Если при этом Forkop уже перенаправил DNS через DoH, DNS тоже может стать недоступным.
-
-`forkop-mgr` разрывает этот цикл правильной последовательностью:
-
-```text
-Forkop STOP
-    │
-    ▼
-NetBird START
-    │
-    ▼
-wait for wt0
-    │
-    ▼
-check IP address
-    │
-    ▼
-Forkop START
-    │
-    ▼
-refresh lists / subscriptions
+```mermaid
+flowchart LR
+    A["Forkop STOP"] --> B["NetBird START"]
+    B --> C["Ожидание wt0 (IPv4)"]
+    C --> D["Forkop START"]
+    D --> E["dnsmasq RESTART"]
+    E --> F["conntrack -F"]
+    F --> G["global_check"]
+    G --> H(["Интернет активен"])
 ```
 
 ---
 
-# 🔄 Безопасное обновление Sing-Box
+## 🔄 Схема безопасного обновления Sing-Box
 
-Обновление ядра выполняется через временную область `/tmp`, чтобы минимизировать риск повреждения установленного бинарника.
-
-```text
-          GitHub Release
-                │
-                ▼
-        Download to /tmp
-                │
-                ▼
-          UPX / unpack
-                │
-                ▼
-        Validate binary
-                │
-                ▼
-       sing-box check
-                │
-          ┌─────┴─────┐
-          │           │
-        ERROR          OK
-          │           │
-          ▼           ▼
-       cleanup    RAM snapshot
-                      │
-                      ▼
-                replace binary
-                      │
-                      ▼
-                post-check
-                  /      \
-                 /        \
-              ERROR        OK
-                │           │
-                ▼           ▼
-             ROLLBACK      DONE
+```mermaid
+flowchart TD
+    A(["GitHub Release (Direct / Mirror)"]) --> B["Загрузка в /tmp/"]
+    B --> C{"Архив цел? (tar -tzf)"}
+    C -- Нет --> Err["Очистка и отмена"]
+    C -- Да --> D["Распаковка во временную область"]
+    D --> E{"Версия бинарника совпадает?"}
+    E -- Нет --> Err
+    E -- Да --> F{"Достаточно места в /overlay?"}
+    F -- Нет --> Err
+    F -- Да --> G["Создание RAM snapshot старого ядра"]
+    G --> H["Атомарная замена /usr/bin/sing-box"]
+    H --> I["Безопасный запуск Forkop"]
+    I --> J{"Процесс запущен в течение 10с?"}
+    J -- Да --> Success(["Ядро успешно обновлено!"])
+    J -- Нет --> Rollback["Автоматический откат из RAM snapshot"]
+    Rollback --> DoneRollback(["Предыдущее ядро восстановлено"])
 ```
 
 ---
 
-## 🚀 Установка и обновление
+## 🖥️ Консольный интерфейс
+
+Главный экран менеджера автоматически определяет модель устройства, версию прошивки и сетевые статусы:
+
+```text
+========================================================
+             FORKOP CONTROL CENTER                     
+========================================================
+  Устройство : Xiaomi Redmi Router AX6000 (stock layout) (OpenWrt 25.12.5)
+  Ядро       : 1.14.1-extended-2.7.2
+  Forkop     : 1.0.5
+  Туннель    : NetBird UP (wt0: 100.95.59.11)
+========================================================
+  1) Управление ядром Sing-Box (Extended + UPX)
+  2) Обновление Forkop (прямая установка APK)
+  3) Резервное копирование и восстановление
+  4) Быстрый безопасный перезапуск
+  5) Комплексная диагностика (Global Check)
+  L) Сменить язык / Switch to English
+  0) Выход
+========================================================
+Выберите раздел [0-5, L]:
+```
+
+---
+
+## 🚀 Установка и быстрый старт
 
 ### Быстрая установка (в одну команду)
 
-Так как при активном Forkop правила маршрутизации роутера блокируют прямые сетевые вызовы к GitHub, перед установкой служба временно останавливается и сразу поднимается обратно после загрузки:
+Так как при активном Forkop локальный исходящий трафик роутера к GitHub может перехватываться правилами фаервола, служба временно останавливается на несколько секунд и автоматически стартует после завершения установки:
 
 ```sh
 /etc/init.d/forkop stop 2>/dev/null || true
@@ -236,453 +168,261 @@ sh -c "$(wget -4 -qO- https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/i
 /etc/init.d/forkop start 2>/dev/null || true
 ```
 
-Запуск:
+### Ручная установка без инсталлятора
+
+```sh
+/etc/init.d/forkop stop 2>/dev/null || true
+wget -4 -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr
+chmod +x /usr/bin/forkop-mgr
+/etc/init.d/forkop start 2>/dev/null || true
+```
+
+### Запуск:
 
 ```sh
 forkop-mgr
 ```
 
-> Если репозиторий/ветка отличаются от `Bdata0/forkop-mgr/main`, замените URL на актуальный.
-
 ---
 
-# 🖥️ Интерфейс консольного меню
-
-При запуске скрипт автоматически считывает текущий статус системы:
-
-```text
-========================================================
-             FORKOP CONTROL CENTER
-========================================================
-  Устройство : Xiaomi AX6000 (OpenWrt 25.12)
-  Ядро       : Sing-Box 1.14.1-extended-2.7.2
-  Forkop     : 1.0.5
-  Туннель    : NetBird UP (wt0)
-========================================================
-  1) Управление ядром Sing-Box (Extended + UPX)
-  2) Обновление самого Forkop (прямая установка APK)
-  3) Резервное копирование и Восстановление
-  4) Быстрый безопасный перезапуск всех служб
-  0) Выход
-========================================================
-Выберите раздел [0-4]:
-```
-
----
-
-# 📖 Подробное описание
-
-## 1. Управление ядром Sing-Box
-
-Скрипт получает последние релизы из репозитория:
-
-**[shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended)**
-
-Пользователь может выбрать одну из трёх последних версий.
-
-Все операции выполняются максимально безопасно:
-
-1. Получение списка последних релизов.
-2. Выбор версии.
-3. Проверка свободного места.
-4. Скачивание сборки в `/tmp`.
-5. Распаковка в ОЗУ.
-6. Проверка бинарного файла.
-7. Проверка конфигурации через `sing-box check`.
-8. Создание резервной копии текущего ядра.
-9. Замена бинарного файла.
-10. Синхронизация версии с `apk` и Forkop.
-
-При ошибке выполняется автоматический **rollback**.
-
----
-
-## 2. Обновление Forkop
-
-Релизы берутся из:
-
-**[ushan0v/forkop](https://github.com/ushan0v/forkop)**
-
-Пакеты устанавливаются напрямую через `apk`:
-
-```sh
-apk add forkop.apk luci-app-forkop.apk
-```
-
-Это позволяет избежать ограничения стандартного установщика, требующего значительный запас свободного места.
-
-Пользовательская конфигурация:
-
-```text
-/etc/config/forkop
-```
-
-После обновления дополнительно контролируется NetBird:
-
-```text
-Forkop STOP
-    ↓
-NetBird START
-    ↓
-wait for wt0
-    ↓
-check IP
-    ↓
-Forkop START
-    ↓
-update lists
-```
-
----
-
-## 3. Резервное копирование и восстановление
+## 📦 Резервное копирование и восстановление
 
 ### Создание бэкапа
-
-В архив могут входить:
-
+Архив формируется автоматически и сохраняется в постоянный каталог:
 ```text
-Forkop
-NetBird
-DoH
-DHCP
-Cron
-scripts
-certificates
-NetBird keys
+/etc/forkop_backups/forkop_backup_YYYYMMDD_HHMMSS.tar.gz
 ```
+Для быстрого скачивания создаётся копия в `/tmp/`.
 
-Постоянное хранилище:
-
-```text
-/etc/forkop_backups/
-```
-
-Временный файл для скачивания:
-
-```text
-/tmp/
-```
-
-### Скачивание на ПК
-
-Linux / macOS / PowerShell:
-
-```powershell
+### Скачивание на компьютер (PowerShell / Linux / macOS):
+```sh
 scp -O root@192.168.11.1:/tmp/forkop_backup_*.tar.gz .
 ```
 
-> Замените `192.168.11.1` на IP-адрес вашего роутера при необходимости.
+### Процесс восстановления с Rollback:
 
-### Восстановление
-
-Перед восстановлением:
-
-```text
-Current state
-     │
-     ▼
-RAM snapshot
-     │
-     ▼
-Restore backup
-     │
-     ▼
-Validation
-   ┌─┴─┐
-   │   │
-  OK ERROR
-   │   │
-   ▼   ▼
- DONE ROLLBACK
+```mermaid
+flowchart TD
+    A(["Выбор бэкапа (.tar.gz)"]) --> B{"Проверка архива (tar -tzf)"}
+    B -- Повреждён --> Err["Ошибка: отмена"]
+    B -- Цел --> C["Создание аварийного snapshot в RAM"]
+    C --> D["Остановка Forkop"]
+    D --> E["Распаковка в корень /"]
+    E --> F["Проверка NetBird (wt0)"]
+    F -- Сбой --> Rollback["Rollback из аварийного snapshot"]
+    F -- OK --> G["Безопасный запуск Forkop"]
+    G -- Сбой --> Rollback
+    G -- OK --> Done(["Система успешно восстановлена!"])
 ```
 
 ---
 
-## 4. Быстрый безопасный перезапуск
-
-Используйте этот режим, если:
-
-- NetBird временно потерял соединение;
-- перестал подниматься `wt0`;
-- возникла DNS-петля;
-- сетевой стек оказался в некорректном состоянии.
-
-Последовательность:
-
-1. Остановить Forkop.
-2. Восстановить возможность прямого DNS-резолва.
-3. Перезапустить NetBird.
-4. Дождаться `wt0`.
-5. Проверить IP-адрес.
-6. Запустить Forkop.
-7. Обновить списки блокировок и подписки.
-
----
-
-# ⚙️ Системные требования
+## ⚙️ Системные требования
 
 | Компонент | Требование |
 |---|---|
-| **ОС** | OpenWrt 25.x |
-| **Package Manager** | `apk` |
+| **ОС** | OpenWrt 24.x / 25.x |
+| **Пакетный менеджер** | `apk` |
 | **Архитектура** | ARM64 / AArch64 |
-| **SoC** | MediaTek MT7986A и аналогичные |
-| **Shell** | POSIX `sh` |
-| **Необходимые пакеты** | `curl`, `tar`, `ca-certificates` |
-
-Проект ориентирован прежде всего на роутеры с ограниченным объёмом `/overlay`.
+| **Целевой SoC** | MediaTek MT7986A и аналогичные |
+| **Оболочка (Shell)** | POSIX `/bin/sh` (BusyBox ash) |
+| **Необходимые утилиты** | `curl` или `wget`, `tar`, `ca-certificates` |
 
 ---
 
-# ⚠️ Безопасность
+## 🔐 Безопасность данных NetBird
 
-## 🔐 Ключи NetBird
+Архивы бэкапов содержат **приватные ключи и конфигурации NetBird** (`/etc/netbird/config.json`).
+* **Не загружайте бэкапы** в публичные репозитории или файлообменники.
+* При замене роутера на такой же используйте полный бэкап для сохранения IP в mesh-сети.
+* При настройке нового независимого узла **не переносите старые ключи** — используйте новый `Setup Key`.
 
-Архивы резервных копий могут содержать **приватные ключи и данные авторизации NetBird**, включая:
+---
 
-```text
-/etc/netbird/config.json
+## 🩺 Ручная диагностика через терминал
+
+```sh
+# Проверка статуса туннеля NetBird
+netbird status
+ip addr show wt0
+
+# Проверка версии и валидности ядра Sing-Box
+sing-box version
+sing-box check -c /etc/sing-box/config.json
+
+# Проверка пакета Forkop
+apk info -v | grep '^forkop-'
+
+# Тест прямого доступа к GitHub
+curl -4 -Iv https://raw.githubusercontent.com/
+
+# Запуск встроенной комплексной проверки
+forkop global_check
 ```
 
-Поэтому:
-
-- **не публикуйте `.tar.gz` бэкапы в GitHub;**
-- не размещайте их в публичных файловых хранилищах;
-- храните бэкапы в защищённом месте;
-- не передавайте архивы третьим лицам без необходимости.
-
-### Восстановление существующего роутера
-
-Для замены вышедшего из строя роутера и сохранения существующей конфигурации NetBird используйте полный бэкап вместе с соответствующей конфигурацией `/etc/netbird/`.
-
-### Новый независимый роутер
-
-Если создаётся новый независимый роутер, **не восстанавливайте старые NetBird-ключи**.
-
-Используйте новый **Setup Key** для регистрации нового узла.
-
 ---
 
-# 🗂️ Структура проекта
+## 🗂️ Структура проекта
 
 ```text
 forkop-mgr/
-├── forkop-mgr
-└── README.md
+├── forkop-mgr        # Главный исполняемый скрипт центра управления
+├── install.sh        # Скрипт автоматической установки с валидацией
+└── README.md         # Документация проекта (RU / EN)
 ```
 
-После установки основной скрипт находится в:
-
-```text
-/usr/bin/forkop-mgr
-```
+- Конфигурация языка: `/etc/forkop/mgr.lang`
+- Папка бэкапов: `/etc/forkop_backups/`
+- Временная рабочая область: `/tmp/forkop-mgr/` (очищается автоматически)
 
 ---
 
-# 🤝 Contributing
-
-Предложения, исправления и улучшения приветствуются.
-
-Если вы нашли проблему:
-
-1. Проверьте, что она воспроизводится на актуальной версии OpenWrt.
-2. Сохраните вывод `forkop-mgr`.
-3. Создайте [Issue](https://github.com/Bdata0/forkop-mgr/issues).
-4. По возможности приложите логи без приватных ключей, токенов и конфиденциальных данных.
-
-Pull Requests также приветствуются.
-
----
-
-# 📜 License
-
-```text
-MIT License
-```
-
----
-
-# ⭐ Поддержка проекта
-
-Если `forkop-mgr` оказался полезен, поставьте ⭐ репозиторию — это помогает проекту развиваться.
-
----
-
-# 🇬🇧 English
+# 🌐 EN
 
 ## 📌 About
 
-`forkop-mgr` is a console-based management and recovery utility for routers running:
+`forkop-mgr` is an interactive CLI control center for safely maintaining the network stack on OpenWrt routers running:
 
-- **Forkop**;
-- **Sing-Box Extended**;
-- **NetBird**;
-- **DoH DNS**;
-- **OpenWrt 25.x** with the `apk` package manager.
+- **Forkop** — routing policies, split tunneling, and TProxy rules;
+- **Sing-Box Extended** — high-performance modern proxy core;
+- **NetBird** — P2P mesh VPN tunnel (`wt0`);
+- **OpenWrt 24.x / 25.x** with the `apk` package manager.
 
-The project is designed with **small `/overlay` partitions** in mind, making updates and recovery safer on devices with limited flash storage.
-
----
-
-## 🌟 Features
-
-### ⚡ Sing-Box Extended management
-
-- Interactive selection of the **3 latest releases** from GitHub.
-- Official **UPX-compressed** builds.
-- Significantly reduced flash usage: about **21 MB instead of ~100 MB**.
-- Smart free-space calculation.
-- Temporary operations performed in **RAM (`/tmp`)**.
-- RAM snapshot before replacing the current binary.
-- Automatic **rollback** on failure.
-- Configuration validation using `sing-box check`.
-- Synchronization with `apk` package metadata and Forkop cache.
-- Accurate version information in LuCI.
-
-### 🔄 Safe Forkop updates
-
-- Direct installation of:
-  - `forkop.apk`;
-  - `luci-app-forkop.apk`.
-- Bypasses the official installer **15 MB free-space requirement**.
-- Packages are only around **500 KB**.
-- Automatic handling of `/etc/apk/world`.
-- Preserves `/etc/config/forkop`.
-- Installs packages directly with `apk add`.
-
-### 🛡️ NetBird (`wt0`) protection
-
-The manager prevents circular dependencies between DNS, Forkop and NetBird.
-
-Typical startup sequence:
-
-```text
-Forkop STOP
-    ↓
-NetBird START
-    ↓
-wait for wt0
-    ↓
-check IP address
-    ↓
-Forkop START
-    ↓
-refresh lists
-```
-
-### 📦 Full backup and restore
-
-Backups can include:
-
-- Forkop configuration;
-- NetBird configuration and keys;
-- certificates;
-- DoH settings;
-- DHCP configuration;
-- Cron jobs;
-- scripts and related settings.
-
-Backups are stored in:
-
-```text
-/etc/forkop_backups/
-```
-
-and temporarily in:
-
-```text
-/tmp/
-```
-
-A RAM snapshot is created before restoring a backup, allowing an automatic rollback if the restored configuration fails.
+The primary objective is to eliminate flash wear and prevent bricked network configurations by executing all staging operations in RAM (`/tmp`).
 
 ---
 
-# 🏗️ Architecture
+## 🌟 Key Features
 
-```text
-                         ┌──────────────────────┐
-                         │     OpenWrt 25.x     │
-                         │        Router        │
-                         └──────────┬───────────┘
-                                    │
-                           ┌────────▼────────┐
-                           │   forkop-mgr    │
-                           │ Control Center  │
-                           └────────┬────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              │                     │                     │
-              ▼                     ▼                     ▼
-       ┌─────────────┐        ┌─────────────┐       ┌─────────────┐
-       │    Forkop   │──────▶│    DoH DNS  │       │  Sing-Box   │
-       └──────┬──────┘        └─────┬───────┘       │  Extended   │
-              │                     │               └─────────────┘
-              │                     │
-              │              DNS dependency
-              │                     │
-              │                     ▼
-              │               ┌─────────────┐
-              └─────────────▶│   NetBird   │
-                              │     wt0     │
-                              └──────┬──────┘
-                                     │
-                                     ▼
-                             NetBird Management
-```
+### ⚡ Sing-Box Extended Management
+- Interactive selection of the **3 latest releases** from GitHub API.
+- Direct download of official **UPX-compressed** ARM64 builds (`compressed.tar.gz`).
+- Significant flash savings: **~20 MB instead of ~100 MB**.
+- **Multi-stage validation:** archive integrity test (`tar -tzf`), executable startup test, and version verification prior to replacing files.
+- **Storage safety check:** calculates required `/overlay` capacity accounting for the replacement of the existing core.
+- **Automated rollback:** preserves a RAM snapshot of the previous binary. If the new core fails to start within 10 seconds, the previous working binary is restored automatically.
 
-The manager controls the service order to avoid DNS/NetBird startup loops.
+### 🔄 Safe Forkop Package Updates
+- Direct download of `forkop_<version>.apk` and `luci-app-forkop_<version>.apk` from official release assets.
+- Clean installation via `apk add --allow-untrusted` without touching `/etc/apk/world` or internal APK package databases manually.
+- Automatically preserves and restores `/etc/config/forkop`.
+
+### 🛡️ NetBird (`wt0`) Lifecycle & DNS Loop Prevention
+Avoids mutual deadlocks between NetBird and DNS resolution:
+1. Forkop is stopped temporarily.
+2. NetBird service is restarted.
+3. Waits for `wt0` to obtain an active IPv4 address.
+4. Forkop starts only after the tunnel is verified.
+
+### 🌐 Anti-Censorship & GitHub Mirroring
+- **Single-Session Network Mode:** Forkop is stopped at most once during an entire sequence of downloads, eliminating connection flapping.
+- **Mirror Fallback:** Automatically switches to proxy mirrors (`ghproxy.net`, `gh-proxy.com`) if GitHub is throttled or blocked by ISPs/TSPU.
+
+### 📦 Backup & Recovery
+- Archives essential configurations:
+  `/etc/config/forkop`, `/etc/forkop`, `/etc/netbird`, `/etc/config/netbird`, `/etc/config/dhcp`, `/etc/crontabs/root`, `/usr/bin/forkop-mgr`.
+- Stored permanently in `/etc/forkop_backups/` and duplicated in `/tmp/` for easy retrieval.
+- Automated rollback snapshot created before restoration.
+
+### 🩺 Complete Restart & Diagnostics
+- **Quick Safe Restart:** NetBird restart → wait for `wt0` → start Forkop → restart `dnsmasq` → flush `conntrack -F` → warm up Fake-IP/nodes → refresh subscriptions.
+- **Global Check:** Launches `/usr/bin/forkop global_check` directly in the terminal, showing node latency and nftables health without opening a browser.
 
 ---
 
-# 🔄 Safe Sing-Box update flow
+## 🏗️ Network Architecture
 
-```text
-          GitHub Release
-                │
-                ▼
-        Download to /tmp
-                │
-                ▼
-          UPX / unpack
-                │
-                ▼
-        Validate binary
-                │
-                ▼
-       sing-box check
-                │
-          ┌─────┴─────┐
-          │           │
-        ERROR          OK
-          │           │
-          ▼           ▼
-       cleanup    RAM snapshot
-                      │
-                      ▼
-                replace binary
-                      │
-                      ▼
-                post-check
-                  /      \
-                 /        \
-              ERROR        OK
-                │           │
-                ▼           ▼
-             ROLLBACK      DONE
+```mermaid
+flowchart TD
+    Router["OpenWrt 24.x / 25.x (Router)"] --> Mgr["forkop-mgr (Control Center)"]
+
+    subgraph Stack ["Network Stack & Dependencies"]
+        Forkop["Forkop (TProxy / NFT)"]
+        SingBox["Sing-Box Extended (UPX)"]
+        NetBird["NetBird (wt0 VPN)"]
+        FakeIP["127.0.0.42:53 (Fake-IP)"]
+        Mgmt["Management Server"]
+
+        Forkop -->|Intercepts traffic| SingBox
+        SingBox -->|DNS requests| FakeIP
+        SingBox -->|Tunnel exit| NetBird
+        NetBird -.->|Requires DNS to connect| Mgmt
+    end
+
+    Mgr --> Forkop
+    Mgr --> SingBox
+    Mgr --> NetBird
+```
+
+### Breaking the Circular DNS Dependency
+
+During cold startup, NetBird cannot resolve its management server without DNS, while DNS is captured by the proxy core which depends on NetBird's tunnel. `forkop-mgr` orchestrates the startup sequence to break this cycle:
+
+```mermaid
+flowchart LR
+    A["Forkop STOP"] --> B["NetBird START"]
+    B --> C["Wait for wt0 (IPv4)"]
+    C --> D["Forkop START"]
+    D --> E["dnsmasq RESTART"]
+    E --> F["conntrack -F"]
+    F --> G["global_check"]
+    G --> H(["Internet Active"])
 ```
 
 ---
 
-# 🚀 Quick Start and update
+## 🔄 Safe Sing-Box Update Workflow
 
-## Quick Install (one command)
+```mermaid
+flowchart TD
+    A(["GitHub Release (Direct / Mirror)"]) --> B["Download to /tmp/"]
+    B --> C{"Archive valid? (tar -tzf)"}
+    C -- No --> Err["Cleanup & Cancel"]
+    C -- Yes --> D["Extract to temporary staging"]
+    D --> E{"Binary version matches?"}
+    E -- No --> Err
+    E -- Yes --> F{"Sufficient /overlay space?"}
+    F -- No --> Err
+    F -- Yes --> G["Create RAM snapshot of old binary"]
+    G --> H["Atomic replacement /usr/bin/sing-box"]
+    H --> I["Safe Forkop startup"]
+    I --> J{"Process active within 10s?"}
+    J -- Yes --> Success(["Kernel updated successfully!"])
+    J -- No --> Rollback["Automated rollback from RAM snapshot"]
+    Rollback --> DoneRollback(["Previous kernel restored"])
+```
 
-Connect to the router over SSH and run:
+---
 
+## 🖥️ Terminal UI
 
-Since, when Forkop is active, the router's routing rules block direct network requests to GitHub, the service is temporarily stopped before installation and immediately restarted after it has finished loading:
+```text
+========================================================
+             FORKOP CONTROL CENTER                     
+========================================================
+  Device : Xiaomi Redmi Router AX6000 (stock layout) (OpenWrt 25.12.5)
+  Kernel : 1.14.1-extended-2.7.2
+  Forkop : 1.0.5
+  Tunnel : NetBird UP (wt0: 100.95.59.11)
+========================================================
+  1) Sing-Box Extended Kernel Management (UPX)
+  2) Update Forkop (Direct APK installation)
+  3) Backup & Restore
+  4) Quick safe restart
+  5) System diagnostics (Global Check)
+  L) Change language / Переключить на русский
+  0) Exit
+========================================================
+Select a section [0-5, L]:
+```
+
+---
+
+## 🚀 Installation & Quick Start
+
+### One-Liner Installation (Recommended)
+
+Because active Forkop routing can intercept outbound router traffic to GitHub, Forkop is stopped briefly during installation and restarted automatically upon completion:
 
 ```sh
 /etc/init.d/forkop stop 2>/dev/null || true
@@ -690,118 +430,123 @@ sh -c "$(wget -4 -qO- https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/i
 /etc/init.d/forkop start 2>/dev/null || true
 ```
 
-Run:
+### Manual Installation
+
+```sh
+/etc/init.d/forkop stop 2>/dev/null || true
+wget -4 -O /usr/bin/forkop-mgr https://raw.githubusercontent.com/Bdata0/forkop-mgr/main/forkop-mgr
+chmod +x /usr/bin/forkop-mgr
+/etc/init.d/forkop start 2>/dev/null || true
+```
+
+### Launch:
 
 ```sh
 forkop-mgr
 ```
 
-> If your repository or branch is different, replace the URL accordingly.
-
 ---
 
-# 🖥️ Console interface
+## 📦 Backup & Recovery
 
-Example:
-
+### Creating a Backup
+Backups are archived into:
 ```text
-========================================================
-             FORKOP CONTROL CENTER
-========================================================
-  Device     : Xiaomi AX6000 (OpenWrt 25.12)
-  Core       : Sing-Box 1.14.1-extended-2.7.2
-  Forkop     : 1.0.5
-  Tunnel     : NetBird UP (wt0)
-========================================================
-  1) Sing-Box Core Management (Extended + UPX)
-  2) Forkop Update (Direct APK Installation)
-  3) Backup and Restore
-  4) Safe Service Restart
-  0) Exit
-========================================================
-Select [0-4]:
+/etc/forkop_backups/forkop_backup_YYYYMMDD_HHMMSS.tar.gz
+```
+A temporary copy is placed in `/tmp/` for convenient SCP transfer.
+
+### Download to PC (PowerShell / Linux / macOS):
+```sh
+scp -O root@192.168.11.1:/tmp/forkop_backup_*.tar.gz .
+```
+
+### Restore with Automated Rollback:
+
+```mermaid
+flowchart TD
+    A(["Select Backup (.tar.gz)"]) --> B{"Verify Archive (tar -tzf)"}
+    B -- Corrupt --> Err["Error: Cancel"]
+    B -- Valid --> C["Emergency snapshot in RAM"]
+    C --> D["Stop Forkop"]
+    D --> E["Extract to root /"]
+    E --> F["Check NetBird (wt0)"]
+    F -- Failed --> Rollback["Rollback from emergency snapshot"]
+    F -- OK --> G["Safe Forkop startup"]
+    G -- Failed --> Rollback
+    G -- OK --> Done(["System restored successfully!"])
 ```
 
 ---
 
-# ⚙️ Requirements
+## ⚙️ System Requirements
 
 | Component | Requirement |
 |---|---|
-| **OS** | OpenWrt 25.x |
-| **Package manager** | `apk` |
+| **OS** | OpenWrt 24.x / 25.x |
+| **Package Manager** | `apk` |
 | **Architecture** | ARM64 / AArch64 |
-| **SoC** | MediaTek MT7986A and similar |
-| **Shell** | POSIX `sh` |
-| **Required packages** | `curl`, `tar`, `ca-certificates` |
+| **Target SoC** | MediaTek MT7986A and compatible |
+| **Shell** | POSIX `/bin/sh` (BusyBox ash) |
+| **Required Utilities** | `curl` or `wget`, `tar`, `ca-certificates` |
 
 ---
 
-# ⚠️ Security
+## 🔐 Security & NetBird Credentials
 
-## 🔐 NetBird private keys
+Backup archives contain **private keys and authentication tokens** (`/etc/netbird/config.json`).
+* **Never commit backup files** to public git repositories or file hosts.
+* When replacing a router with identical hardware, restoring the full backup preserves the mesh node IP.
+* When provisioning a new independent node, **do not restore existing keys** — use a fresh `Setup Key`.
 
-Backup archives may contain **private NetBird authentication data**, including:
+---
 
-```text
-/etc/netbird/config.json
+## 🩺 Manual Terminal Diagnostics
+
+```sh
+# Check NetBird status & tunnel
+netbird status
+ip addr show wt0
+
+# Verify sing-box version and configuration
+sing-box version
+sing-box check -c /etc/sing-box/config.json
+
+# Check installed Forkop package
+apk info -v | grep '^forkop-'
+
+# Test direct GitHub connectivity
+curl -4 -Iv https://raw.githubusercontent.com/
+
+# Execute built-in diagnostic suite
+forkop global_check
 ```
 
-Never publish these archives to a public repository.
-
-Keep backups secure and do not share them unless necessary.
-
-### Existing router replacement
-
-When replacing a failed router and preserving its existing NetBird identity, restore the full backup including the relevant `/etc/netbird/` configuration.
-
-### New independent router
-
-For a new independent router, **do not restore the old NetBird keys**.
-
-Register the new node using a new **Setup Key** instead.
-
 ---
 
-# 🗂️ Project structure
+## 🗂️ Project Structure
 
 ```text
 forkop-mgr/
-├── forkop-mgr
-└── README.md
+├── forkop-mgr        # Main interactive management utility
+├── install.sh        # Installer script with syntax validation
+└── README.md         # Bilingual project documentation (RU / EN)
 ```
 
-After installation:
-
-```text
-/usr/bin/forkop-mgr
-```
+- Language configuration: `/etc/forkop/mgr.lang`
+- Backup directory: `/etc/forkop_backups/`
+- Temporary workspace: `/tmp/forkop-mgr/` (automatically cleaned)
 
 ---
 
-# 🤝 Contributing
+## 🔗 Upstream Projects
 
-Bug reports, improvements and Pull Requests are welcome.
-
-When reporting an issue:
-
-1. Make sure it can be reproduced on a current OpenWrt version.
-2. Include relevant `forkop-mgr` output.
-3. Open an [Issue](https://github.com/Bdata0/forkop-mgr/issues).
-4. Remove private keys, tokens and sensitive configuration data from logs before sharing them.
+- **Forkop:** [https://github.com/ushan0v/forkop](https://github.com/ushan0v/forkop)
+- **sing-box Extended:** [https://github.com/shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended)
+- **NetBird:** [https://github.com/netbirdio/netbird](https://github.com/netbirdio/netbird)
 
 ---
 
-# 📜 License
+## 📜 License
 
-```text
-MIT License
-```
-
----
-
-# ⭐ Support
-
-If `forkop-mgr` is useful to you, consider giving the repository a ⭐.
-
-It helps the project grow.
+Distributed under the **MIT License**.
